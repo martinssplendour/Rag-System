@@ -5,9 +5,17 @@ Full-stack MVP for uploading market-access evidence and asking cited questions a
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the system design, async ingestion decision, trade-offs,
 and production next steps.
 
-## One-Command App Start
+## App Start
 
-Use the Nginx-fronted Docker Compose setup in mock/offline mode:
+Create a root `.env` file from the example and set a real `JWT_SECRET`:
+
+```bash
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Paste the generated value into `JWT_SECRET`, then use the Nginx-fronted Docker Compose setup in
+mock/offline mode:
 
 ```bash
 npm run app
@@ -39,21 +47,18 @@ Mock mode uses:
 
 - `EMBEDDING_PROVIDER=mock`
 - `LLM_PROVIDER=mock`
-- `AUTH_MODE=disabled` for zero-secret local setup
-- `ADMIN_EMAILS=admin@example.com` unless overridden; the UI uses this to show upload controls
+- `AUTH_MODE=jwt`
+- `JWT_SECRET` loaded from your local `.env`
+- `ADMIN_EMAILS=admin@example.com` unless overridden
 - a separate `backend-mock-data` Docker volume
 
-To make your own login appear as an admin in the UI, create a root `.env` file from `.env.example`
-and set:
+Only admin users can upload evidence. To make your own login an admin, set:
 
 ```text
 ADMIN_EMAILS=your-email@example.com
 ```
 
 Then register or log in with that same email.
-
-For enforced JWT auth, set `AUTH_MODE=jwt` and a strong `JWT_SECRET` in the root `.env` or
-`backend/.env` before starting the stack.
 
 Live Gemini mode:
 
