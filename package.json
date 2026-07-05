@@ -4,12 +4,12 @@
   "private": true,
   "scripts": {
     "start": "npm run app",
-    "app": "docker compose up --build",
-    "app:mock": "docker compose up --build",
+    "app": "docker-compose up --build",
+    "app:mock": "docker-compose up --build",
     "start:live": "npm run app:live",
-    "app:live": "docker compose -f docker-compose.yml -f docker-compose.live.yml up --build",
-    "app:down": "docker compose down",
-    "app:down:live": "docker compose -f docker-compose.yml -f docker-compose.live.yml down",
-    "app:logs": "docker compose logs -f"
+    "app:live": "docker-compose -f docker-compose.yml -f docker-compose.live.yml up --build",
+    "app:down": "docker-compose down",
+    "app:down:live": "docker-compose -f docker-compose.yml -f docker-compose.live.yml down",
+    "app:logs": "docker-compose logs -f"
   }
 }
