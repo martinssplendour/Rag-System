@@ -40,6 +40,12 @@ async def test_health_returns_ok(client: AsyncClient):
     assert response.json() == {"status": "ok"}
 
 
+async def test_health_ready_checks_dependencies(client: AsyncClient):
+    response = await client.get("/health/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ready"}
+
+
 async def test_upload_txt_document_succeeds(client: AsyncClient, wait_for_document_status):
     content = (
         b"Document ID: sample_doc\nCountry: United Kingdom\n\n"
@@ -202,6 +208,16 @@ async def test_empty_file_is_rejected(client: AsyncClient):
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "INVALID_INPUT"
+
+
+async def test_oversized_file_is_rejected(client: AsyncClient):
+    content = b"a" * 10_485_761
+    response = await client.post(
+        "/documents",
+        files={"file": ("too-large.txt", content, "text/plain")},
+    )
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "FILE_TOO_LARGE"
 
 
 async def test_duplicate_content_is_rejected_with_409(client: AsyncClient):

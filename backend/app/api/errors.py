@@ -48,6 +48,19 @@ def _envelope(request: Request, code: str, message: str, details: dict[str, Any]
     ).model_dump()
 
 
+def _safe_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    safe_errors: list[dict[str, Any]] = []
+    for error in errors:
+        safe_errors.append(
+            {
+                key: value
+                for key, value in error.items()
+                if key not in {"input", "ctx", "url"}
+            }
+        )
+    return safe_errors
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
@@ -61,7 +74,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=422,
             content=_envelope(
-                request, "VALIDATION_ERROR", "Request validation failed.", {"errors": exc.errors()}
+                request,
+                "VALIDATION_ERROR",
+                "Request validation failed.",
+                {"errors": _safe_validation_errors(exc.errors())},
             ),
         )
 

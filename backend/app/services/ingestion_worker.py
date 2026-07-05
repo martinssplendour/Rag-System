@@ -8,7 +8,13 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings
-from app.core.constants import SOURCE_TYPE_DOCX, SOURCE_TYPE_PDF, STATUS_FAILED, STATUS_READY
+from app.core.constants import (
+    SOURCE_TYPE_DOCX,
+    SOURCE_TYPE_PDF,
+    STATUS_FAILED,
+    STATUS_PROCESSING,
+    STATUS_READY,
+)
 from app.rag.embeddings import EmbeddingProvider
 from app.repositories.chunks import ChunkRepository
 from app.repositories.documents import DocumentRepository
@@ -105,10 +111,11 @@ async def process_ingestion_job(
             )
     except Exception:
         logger.exception("ingestion_job_failed job_id=%s", job_id)
-        await _mark_job_failed(
+        await _handle_job_failure(
             job_id,
             session_factory=session_factory,
             vector_store=vector_store,
+            max_attempts=max(int(settings.ingestion_job_max_attempts), 1),
             error_message="Ingestion failed; see server logs for details.",
         )
 
@@ -144,6 +151,12 @@ async def _run_job_in_session(
         raise RuntimeError(f"Missing document for ingestion job: {job_id}")
     if not document.storage_path:
         raise RuntimeError(f"Document has no stored source content: {document.id}")
+    logger.info(
+        "ingestion_job_started job_id=%s document_id=%s attempt=%s",
+        job.id,
+        document.id,
+        job.attempts,
+    )
 
     raw_bytes = await storage.read(document.storage_path)
     chunk_repo = ChunkRepository(session)
@@ -180,14 +193,21 @@ async def _run_job_in_session(
         embedding_model=_embedding_model_label(settings),
     )
     await job_repo.mark_succeeded(job)
+    logger.info(
+        "ingestion_job_succeeded job_id=%s document_id=%s chunk_count=%s",
+        job.id,
+        document.id,
+        result.chunk_count,
+    )
     await session.commit()
 
 
-async def _mark_job_failed(
+async def _handle_job_failure(
     job_id: str,
     *,
     session_factory: async_sessionmaker[AsyncSession],
     vector_store: VectorStore,
+    max_attempts: int,
     error_message: str,
 ) -> None:
     async with session_factory() as session:
@@ -195,6 +215,7 @@ async def _mark_job_failed(
         job = await job_repo.get(job_id)
         if job is None:
             return
+        should_retry = job.attempts < max_attempts
 
         doc_repo = DocumentRepository(session)
         document = await doc_repo.get(job.workspace_id, job.document_id)
@@ -202,14 +223,38 @@ async def _mark_job_failed(
             chunk_repo = ChunkRepository(session)
             await chunk_repo.delete_by_document(document.id)
             vector_store.delete_by_document(document.id)
-            await doc_repo.update_status(
-                document,
-                status=STATUS_FAILED,
-                chunk_count=0,
-                error_message=error_message,
-            )
+            if should_retry:
+                await doc_repo.update_status(
+                    document,
+                    status=STATUS_PROCESSING,
+                    chunk_count=0,
+                    error_message=None,
+                )
+            else:
+                await doc_repo.update_status(
+                    document,
+                    status=STATUS_FAILED,
+                    chunk_count=0,
+                    error_message=error_message,
+                )
 
-        await job_repo.mark_failed(job, error_message=error_message)
+        if should_retry:
+            logger.warning(
+                "ingestion_job_retrying job_id=%s document_id=%s attempt=%s max_attempts=%s",
+                job.id,
+                job.document_id,
+                job.attempts,
+                max_attempts,
+            )
+            await job_repo.mark_pending_for_retry(job, error_message=error_message)
+        else:
+            logger.error(
+                "ingestion_job_failed_final job_id=%s document_id=%s attempts=%s",
+                job.id,
+                job.document_id,
+                job.attempts,
+            )
+            await job_repo.mark_failed(job, error_message=error_message)
         await session.commit()
 
 

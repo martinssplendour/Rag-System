@@ -53,6 +53,11 @@ This keeps one tenant's large or slow upload from holding an API request open wh
 a simple local setup for reviewers. In production, the SQLite job table and in-process worker would
 be replaced by a durable external queue and separate worker containers.
 
+Ingestion failures are handled as job state, not HTTP failures. The worker retries failed jobs up to
+`INGESTION_JOB_MAX_ATTEMPTS`, keeps the document in `processing` while retrying, and only marks the
+document `failed` after the final attempt. Partial chunks/vectors are cleaned up after each failed
+attempt. User-facing failure text is generic; the server logs keep the exception details.
+
 ## Retrieval and Grounding
 
 At ask time, `/ask` stays synchronous because the user is waiting for an answer. The service:
@@ -68,13 +73,39 @@ At ask time, `/ask` stays synchronous because the user is waiting for an answer.
 The API returns original `raw_text` snippets, not rewritten embedding text, so citations preserve the
 source language and wording.
 
+## Operations
+
+`/health` reports that the API process is alive. `/health/ready` checks that SQLite and Chroma are
+reachable before the service is considered ready for traffic. Operational details for config
+validation, retry behavior, and safe logging live in `OPERATIONS.md`.
+
+## Caching
+
+The MVP includes a small process-local TTL/LRU retrieval cache with two layers:
+
+- a question-type cache maps similar question embeddings to the chunk IDs selected by retrieval;
+- a hot chunk cache maps those chunk IDs to the selected chunk text and metadata.
+
+The cache is tenant-scoped and filter-scoped: workspace, country, document IDs, candidate count,
+and a simple Chroma collection version are part of the cache scope. The app stores question
+embeddings and chunk IDs, not raw questions or final answers. Entries are short-lived and
+size-limited, so the normal Chroma retrieval path remains the source of truth on cache miss or
+stale cache.
+
+Full answer caching is intentionally not implemented in the MVP. It is easier to make stale or
+unsafe in a multi-tenant RAG app because answers depend on the tenant's current ready documents,
+retrieval thresholds, model version, prompt version, and citation validation.
+
 ## Security and Tenancy
 
 - Every document, chunk, question, and answer carries a `workspace_id`.
 - JWT mode isolates users by workspace.
-- Uploads validate both extension and file content.
+- Uploads validate size, extension, and actual file content.
+- JWT-mode uploads require an admin user.
 - Uploaded files are stored through a storage abstraction, outside the web root.
 - The browser never sees provider credentials.
+- Error responses use a safe envelope with request IDs; stack traces and raw validation inputs are
+  not returned to users.
 - Answers include a fixed limitation that they are not medical, legal, regulatory,
   reimbursement, or pricing advice.
 

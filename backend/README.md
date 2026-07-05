@@ -5,7 +5,7 @@ background ingestion, retrieval, and grounded answer generation.
 
 ## What this covers
 
-- `GET /health`
+- `GET /health`, `GET /health/ready`
 - `POST /auth/register`, `POST /auth/login` — real accounts, JWT-based auth (see Authentication below)
 - `POST /documents` — upload `.txt`/`.pdf`, or submit direct text; returns `202 Accepted`
   with `status="processing"`
@@ -39,6 +39,7 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 - Health check: `http://localhost:8000/health`
+- Readiness check: `http://localhost:8000/health/ready`
 - Swagger UI: `http://localhost:8000/docs`
 - OpenAPI schema: `http://localhost:8000/openapi.json`
 
@@ -49,6 +50,11 @@ gitignored. Delete that directory to reset to a clean state.
 row, and returns quickly with the document in `processing` status. The in-process background worker
 started by FastAPI then performs parsing, chunking, embedding, and Chroma upsert. `GET /documents`
 is the status source of truth.
+
+Uploads are checked for size, extension, and actual file content. In JWT mode, uploads are
+admin-only. If background ingestion fails, the worker retries up to `INGESTION_JOB_MAX_ATTEMPTS`
+before marking the document `failed`; stack traces stay in server logs and users only receive safe
+status/error messages.
 
 ## Seeding the real dataset
 
@@ -138,6 +144,17 @@ Set `EMBEDDING_PROVIDER` in `.env`:
 - `azure_openai` — interface exists but is not implemented in this MVP (raises
   `NotImplementedError`); documented as a stretch item.
 
+Retrieval is wrapped in a small in-memory TTL/LRU cache by default
+(`RETRIEVAL_CACHE_ENABLED=true`). It has two layers:
+
+- question-type cache: similar question embeddings, within the same workspace and filters, map to
+  previously selected chunk IDs;
+- hot chunk cache: those chunk IDs map to the selected chunk text and metadata.
+
+The cache stores question embeddings and chunk IDs, not raw questions or final answers. Entries are
+short-lived, size-limited, tenant-scoped, and invalidated when the Chroma collection chunk count
+changes.
+
 ## Known limitations
 
 - **PDF table rows are not individually chunked.** Unlike the pipe-delimited tables in the `.txt`
@@ -185,3 +202,5 @@ Set `EMBEDDING_PROVIDER` in `.env`:
   `rag/`/`vectorstores/`/`storage/` interfaces rather than imported directly in services.
 - See the root `ARCHITECTURE.md` for the end-to-end design, background ingestion decision, and
   production trade-offs.
+- See the root `OPERATIONS.md` for health checks, config validation, retry policy, and logging
+  conventions.

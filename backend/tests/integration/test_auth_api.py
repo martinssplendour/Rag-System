@@ -78,6 +78,9 @@ async def test_register_rejects_short_password(jwt_client: AsyncClient):
         "/auth/register", json={"email": "dave@example.com", "password": "short"}
     )
     assert response.status_code == 422
+    assert '"input"' not in response.text
+    errors = response.json()["error"]["details"]["errors"]
+    assert all("input" not in error for error in errors)
 
 
 async def test_login_with_correct_password_returns_a_token(jwt_client: AsyncClient):

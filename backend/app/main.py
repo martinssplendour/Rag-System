@@ -23,6 +23,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, request_context_middleware
 from app.rag.embeddings import get_embedding_provider
 from app.rag.llm_providers import create_answer_generator
+from app.rag.retrieval_cache import maybe_cache_retriever
 from app.rag.retriever import ChromaRetriever
 from app.repositories.database import build_engine, build_session_factory, create_all
 from app.services.ingestion_worker import IngestionWorker
@@ -63,11 +64,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.chroma_client = chroma_resources.client
         app.state.chroma_collection = chroma_resources.collection
         app.state.vector_store = ChromaVectorStore(chroma_resources.collection)
-        app.state.retriever = ChromaRetriever(
+        base_retriever = ChromaRetriever(
             collection=chroma_resources.collection,
             min_similarity=resolved_settings.retrieval_min_similarity,
             final_context_count=resolved_settings.retrieval_context_count,
             max_chunks_per_document=resolved_settings.retrieval_max_chunks_per_document,
+        )
+        app.state.retriever = maybe_cache_retriever(
+            base_retriever,
+            enabled=resolved_settings.retrieval_cache_enabled,
+            ttl_seconds=resolved_settings.retrieval_cache_ttl_seconds,
+            max_question_entries=resolved_settings.retrieval_cache_max_entries,
+            max_chunk_entries=resolved_settings.retrieval_chunk_cache_max_entries,
+            similarity_threshold=resolved_settings.retrieval_cache_similarity_threshold,
+            collection_version_getter=lambda collection=chroma_resources.collection: str(
+                collection.count()
+            ),
         )
         app.state.answer_generator = create_answer_generator(resolved_settings)
         app.state.ingestion_worker = None

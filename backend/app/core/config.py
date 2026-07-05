@@ -11,6 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -64,6 +65,7 @@ class Settings(BaseSettings):
 
     ingestion_worker_enabled: bool = True
     ingestion_worker_poll_seconds: float = 0.25
+    ingestion_job_max_attempts: int = 3
 
     # Part 2 (retrieval/answer generation) settings. Declared here -- not
     # just read via getattr(settings, name, default) -- because
@@ -92,6 +94,11 @@ class Settings(BaseSettings):
     retrieval_high_confidence_similarity: float = 0.75
     retrieval_max_chunks_per_document: int = 3
     retrieval_max_context_chars: int = 12_000
+    retrieval_cache_enabled: bool = True
+    retrieval_cache_ttl_seconds: int = 900
+    retrieval_cache_max_entries: int = 256
+    retrieval_cache_similarity_threshold: float = 0.97
+    retrieval_chunk_cache_max_entries: int = 1024
     prompt_version: str = "1.0.0"
 
     @property
@@ -102,7 +109,62 @@ class Settings(BaseSettings):
     def admin_email_set(self) -> set[str]:
         return {email.strip().lower() for email in self.admin_emails.split(",") if email.strip()}
 
+    @model_validator(mode="after")
+    def validate_operational_bounds(self) -> Settings:
+        _require_positive("MAX_UPLOAD_BYTES", self.max_upload_bytes)
+        _require_positive("MAX_DIRECT_TEXT_CHARS", self.max_direct_text_chars)
+        _require_positive("CHUNK_SIZE", self.chunk_size)
+        _require_non_negative("CHUNK_OVERLAP", self.chunk_overlap)
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
+
+        _require_positive("INGESTION_WORKER_POLL_SECONDS", self.ingestion_worker_poll_seconds)
+        if self.ingestion_job_max_attempts < 1:
+            raise ValueError("INGESTION_JOB_MAX_ATTEMPTS must be at least 1")
+
+        _require_probability("RETRIEVAL_MIN_SIMILARITY", self.retrieval_min_similarity)
+        _require_probability(
+            "RETRIEVAL_HIGH_CONFIDENCE_SIMILARITY",
+            self.retrieval_high_confidence_similarity,
+        )
+        _require_probability(
+            "RETRIEVAL_CACHE_SIMILARITY_THRESHOLD",
+            self.retrieval_cache_similarity_threshold,
+        )
+        if self.retrieval_high_confidence_similarity < self.retrieval_min_similarity:
+            raise ValueError(
+                "RETRIEVAL_HIGH_CONFIDENCE_SIMILARITY must be greater than or equal to "
+                "RETRIEVAL_MIN_SIMILARITY"
+            )
+
+        _require_positive("RETRIEVAL_CANDIDATE_COUNT", self.retrieval_candidate_count)
+        _require_positive("RETRIEVAL_CONTEXT_COUNT", self.retrieval_context_count)
+        _require_positive("RETRIEVAL_MAX_CHUNKS_PER_DOCUMENT", self.retrieval_max_chunks_per_document)
+        _require_positive("RETRIEVAL_MAX_CONTEXT_CHARS", self.retrieval_max_context_chars)
+        _require_positive("RETRIEVAL_CACHE_TTL_SECONDS", self.retrieval_cache_ttl_seconds)
+        _require_positive("RETRIEVAL_CACHE_MAX_ENTRIES", self.retrieval_cache_max_entries)
+        _require_positive(
+            "RETRIEVAL_CHUNK_CACHE_MAX_ENTRIES",
+            self.retrieval_chunk_cache_max_entries,
+        )
+        return self
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def _require_positive(name: str, value: int | float) -> None:
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+
+
+def _require_non_negative(name: str, value: int | float) -> None:
+    if value < 0:
+        raise ValueError(f"{name} must be non-negative")
+
+
+def _require_probability(name: str, value: float) -> None:
+    if not 0.0 <= value <= 1.0:
+        raise ValueError(f"{name} must be between 0 and 1")

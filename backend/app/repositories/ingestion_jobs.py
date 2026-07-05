@@ -68,11 +68,20 @@ class IngestionJobRepository:
     async def mark_succeeded(self, job: IngestionJob) -> None:
         job.status = INGESTION_JOB_SUCCEEDED
         job.completed_at = _utcnow()
+        job.locked_at = None
         job.error_message = None
+        await self._session.flush()
+
+    async def mark_pending_for_retry(self, job: IngestionJob, *, error_message: str) -> None:
+        job.status = INGESTION_JOB_PENDING
+        job.locked_at = None
+        job.completed_at = None
+        job.error_message = error_message
         await self._session.flush()
 
     async def mark_failed(self, job: IngestionJob, *, error_message: str) -> None:
         job.status = INGESTION_JOB_FAILED
         job.completed_at = _utcnow()
+        job.locked_at = None
         job.error_message = error_message
         await self._session.flush()
