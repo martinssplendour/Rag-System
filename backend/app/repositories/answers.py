@@ -40,7 +40,7 @@ class AnswerRepository(Protocol):
     ) -> SavedAnswer: ...
 
 
-class SQLiteAnswerRepository:
+class PostgresAnswerRepository:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 

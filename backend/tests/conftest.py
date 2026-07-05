@@ -1,35 +1,86 @@
 """Shared pytest fixtures.
 
-Each test gets a fully isolated app instance (temp SQLite file, temp
-Chroma dir, temp upload dir, mock embedding provider) built through the
-same create_app() factory the real app uses -- no monkeypatching of global
-state, no shared state between tests. See python/fastapi.md testing rules
-and the senior-project-pack modularity checklist (module testability).
+Each DB-backed test gets a fully isolated Postgres database, Chroma dir, temp
+upload dir, and mock embedding provider built through the same create_app()
+factory the real app uses -- no monkeypatching of global state, no shared
+state between tests. See python/fastapi.md testing rules and the
+senior-project-pack modularity checklist (module testability).
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
+from app.repositories.database import _normalise_async_database_url  # noqa: E402
 
 
-@pytest.fixture
-def test_settings(tmp_path: Path) -> Settings:
+def _quote_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _base_test_database_url() -> str:
+    return os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL") or Settings().database_url
+
+
+@pytest_asyncio.fixture
+async def postgres_database_url() -> AsyncIterator[str]:
+    base_url = make_url(_normalise_async_database_url(_base_test_database_url()))
+    database_name = f"test_{uuid4().hex}"
+    maintenance_database = os.environ.get("TEST_POSTGRES_MAINTENANCE_DB", "postgres")
+    maintenance_url = base_url.set(database=maintenance_database)
+    test_url = base_url.set(database=database_name)
+
+    admin_engine = create_async_engine(str(maintenance_url), isolation_level="AUTOCOMMIT")
+    try:
+        async with admin_engine.connect() as conn:
+            await conn.execute(text(f"CREATE DATABASE {_quote_identifier(database_name)}"))
+    except Exception as exc:
+        await admin_engine.dispose()
+        pytest.skip(f"Postgres test database is unavailable: {exc}")
+
+    try:
+        yield str(test_url)
+    finally:
+        async with admin_engine.connect() as conn:
+            await conn.execute(
+                text(
+                    "select pg_terminate_backend(pid) "
+                    "from pg_stat_activity "
+                    "where datname = :database_name and pid <> pg_backend_pid()"
+                ),
+                {"database_name": database_name},
+            )
+            await conn.execute(
+                text(
+                    f"DROP DATABASE IF EXISTS {_quote_identifier(database_name)} "
+                    "WITH (FORCE)"
+                )
+            )
+        await admin_engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def test_settings(tmp_path: Path, postgres_database_url: str) -> Settings:
     return Settings(
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'test.db').as_posix()}",
+        database_url=postgres_database_url,
         storage_backend="local",
         local_storage_dir=tmp_path / "uploads",
         chroma_persist_dir=tmp_path / "chroma",

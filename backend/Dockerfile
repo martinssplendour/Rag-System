@@ -11,6 +11,7 @@ RUN apt-get update \
 
 COPY backend/pyproject.toml ./pyproject.toml
 COPY backend/app ./app
+COPY backend/prompts ./prompts
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir -e .
 

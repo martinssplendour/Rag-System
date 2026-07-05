@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.database import Base
@@ -27,8 +27,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
-    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
-    created_at: Mapped[datetime] = mapped_column(default=_utcnow, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
 class Document(Base):
@@ -53,8 +53,10 @@ class Document(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     embedding_model: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(default=_utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(default=_utcnow, onupdate=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
 
     chunks: Mapped[list[DocumentChunk]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
@@ -79,7 +81,7 @@ class DocumentChunk(Base):
     language: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     token_count: Mapped[int | None] = mapped_column(Integer)
     chunk_metadata: Mapped[dict] = mapped_column("metadata", JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(default=_utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
 
@@ -95,8 +97,10 @@ class IngestionJob(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
-    locked_at: Mapped[datetime | None] = mapped_column()
-    started_at: Mapped[datetime | None] = mapped_column()
-    completed_at: Mapped[datetime | None] = mapped_column()
-    created_at: Mapped[datetime] = mapped_column(default=_utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(default=_utcnow, onupdate=_utcnow, nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )

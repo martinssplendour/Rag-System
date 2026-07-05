@@ -2,8 +2,8 @@
 
 ## Summary
 
-Market Access Evidence Assistant is a small, production-minded RAG application. The local MVP uses
-FastAPI, SQLite, local file storage, Chroma, React, and swappable embedding/LLM providers.
+Market Access Evidence Assistant is a small, production-minded RAG application. The Compose MVP uses
+FastAPI, Postgres, local file storage, Chroma, React, and swappable embedding/LLM providers.
 
 ```text
 Browser / React UI
@@ -13,13 +13,13 @@ Browser / React UI
 FastAPI API
   |-- auth / workspace boundary
   |-- document validation + raw file storage
-  |-- SQLite metadata + ingestion_jobs
+  |-- Postgres metadata + ingestion_jobs
   |-- background ingestion worker
   |-- Chroma retriever
   '-- LLM answer generator
 
 Local persistence:
-  SQLite: users, documents, chunks, ingestion jobs, questions, answers
+  Postgres: users, documents, chunks, ingestion jobs, questions, answers
   Local files: original uploaded evidence
   Chroma: chunk vectors and retrieval metadata
 ```
@@ -45,13 +45,13 @@ The background worker owns the slow work:
 - clean and normalize content;
 - chunk evidence;
 - call the embedding provider;
-- persist chunks in SQLite;
+- persist chunks in Postgres;
 - upsert vectors into Chroma;
 - mark the document `ready` or `failed`.
 
 This keeps one tenant's large or slow upload from holding an API request open while still preserving
-a simple local setup for reviewers. In production, the SQLite job table and in-process worker would
-be replaced by a durable external queue and separate worker containers.
+a simple local setup for reviewers. In production, the Postgres-backed job table and in-process
+worker would be replaced by a durable external queue and separate worker containers.
 
 Ingestion failures are handled as job state, not HTTP failures. The worker retries failed jobs up to
 `INGESTION_JOB_MAX_ATTEMPTS`, keeps the document in `processing` while retrying, and only marks the
@@ -73,11 +73,32 @@ At ask time, `/ask` stays synchronous because the user is waiting for an answer.
 The API returns original `raw_text` snippets, not rewritten embedding text, so citations preserve the
 source language and wording.
 
+Prompt text is kept in versioned Markdown files under `backend/prompts/`, not embedded directly in
+the Python service logic. The code loads the prompt selected by `PROMPT_VERSION`, and startup fails
+if the configured prompt version is missing. This keeps prompt changes reviewable and gives a clear
+path toward a production prompt registry later.
+
+## Evaluation
+
+`scripts/evaluate_rag.py` is a rule-based quality evaluator for the supplied candidate dataset. It
+uses the 10 suggested questions from the technical-test PDF, seeds the four documents through the
+public `POST /documents` API, calls `/ask`, and scores:
+
+- whether expected source documents are returned;
+- whether source cards are present and well-formed;
+- whether source snippets contain expected evidence concepts;
+- whether configured answer concepts are present.
+
+The PDF's example answer is used as an answer-concept check for the UK evidence-gaps question. The
+evaluator deliberately avoids an LLM-as-judge in the MVP so results are deterministic and easy to
+explain. Mock mode checks the pipeline offline; live mode uses Gemini and is the stronger answer
+quality check.
+
 ## Operations
 
-`/health` reports that the API process is alive. `/health/ready` checks that SQLite and Chroma are
-reachable before the service is considered ready for traffic. Operational details for config
-validation, retry behavior, and safe logging live in `OPERATIONS.md`.
+`/health` reports that the API process is alive. `/health/ready` checks that Postgres and Chroma
+are reachable before the service is considered ready for traffic. Operational details for
+config validation, retry behavior, and safe logging live in `OPERATIONS.md`.
 
 ## Caching
 
@@ -100,6 +121,8 @@ retrieval thresholds, model version, prompt version, and citation validation.
 
 - Every document, chunk, question, and answer carries a `workspace_id`.
 - JWT mode isolates users by workspace.
+- API-key mode provides simple app-level protection using `X-API-Key` and the default workspace;
+  missing and incorrect keys return the same public error to avoid leaking auth details.
 - Uploads validate size, extension, and actual file content.
 - JWT-mode uploads require an admin user.
 - Uploaded files are stored through a storage abstraction, outside the web root.
@@ -111,11 +134,12 @@ retrieval thresholds, model version, prompt version, and citation validation.
 
 ## Trade-offs
 
-- SQLite + Chroma keep local setup simple and reliable for the technical test.
+- Postgres + Chroma keep the app close to a production data model while keeping vector search simple
+  for the technical test.
 - The in-process worker demonstrates the correct async architecture without requiring Redis,
   Celery, or hosted infrastructure.
-- Chroma is suitable for the supplied dataset; production should move toward managed Postgres with
-  pgvector or another evaluated vector backend.
+- Chroma is suitable for the supplied dataset; production should move vector search into pgvector or
+  another evaluated managed vector backend once retrieval quality and scale requirements are clearer.
 - PDF table extraction is intentionally conservative to avoid returning misleading row-level
   citations.
 
@@ -124,6 +148,6 @@ retrieval thresholds, model version, prompt version, and citation validation.
 1. Replace the in-process worker with a durable queue and separately scaled worker containers.
 2. Add retry/dead-letter handling and queue-depth metrics.
 3. Move local storage to private object storage.
-4. Move SQLite/Chroma to Postgres + pgvector with row-level security.
+4. Add Alembic migrations and managed Postgres backups; evaluate pgvector for replacing Chroma.
 5. Add malware scanning and OCR for larger document workflows.
-6. Add evaluation gates for retrieval quality and answer quality before release.
+6. Promote live RAG evaluation thresholds into CI/CD before release.

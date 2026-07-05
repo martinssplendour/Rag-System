@@ -1,17 +1,14 @@
 """Async SQLAlchemy engine/session construction.
 
 Deliberately exposes plain factory functions rather than a module-level
-singleton engine: tests build their own isolated engine (temp-file or
-in-memory SQLite) through the same functions the app uses, so no test needs
-to monkeypatch global state or spin up the full app to exercise a
-repository. See senior-project-pack modularity checklist, section 10.
+singleton engine: tests build their own isolated Postgres database through
+the same functions the app uses, so no test needs to monkeypatch global state
+or spin up the full app to exercise a repository. See senior-project-pack
+modularity checklist, section 10.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -25,17 +22,19 @@ class Base(DeclarativeBase):
     pass
 
 
-def _ensure_sqlite_parent_dir(database_url: str) -> None:
-    if not database_url.startswith("sqlite"):
-        return
-    path_part = database_url.split("///", 1)[-1]
-    if path_part and path_part != ":memory:":
-        Path(path_part).parent.mkdir(parents=True, exist_ok=True)
+def _normalise_async_database_url(database_url: str) -> str:
+    if database_url.startswith("postgres://"):
+        return database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if database_url.startswith("postgresql+asyncpg://"):
+        return database_url
+    raise ValueError("DATABASE_URL must be a Postgres URL using postgresql+asyncpg.")
 
 
 def build_engine(database_url: str) -> AsyncEngine:
-    _ensure_sqlite_parent_dir(database_url)
-    return create_async_engine(database_url, echo=False)
+    normalised_url = _normalise_async_database_url(database_url)
+    return create_async_engine(normalised_url, echo=False, pool_pre_ping=True)
 
 
 def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
@@ -45,10 +44,3 @@ def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
 async def create_all(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        if engine.url.get_backend_name() == "sqlite":
-            result = await conn.execute(text("PRAGMA table_info(users)"))
-            columns = {row[1] for row in result.fetchall()}
-            if "is_admin" not in columns:
-                await conn.execute(
-                    text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0")
-                )

@@ -94,6 +94,7 @@ class EvidenceAssistantService:
                 question=question,
                 context=context,
                 invalid_labels=validation.invalid_source_ids,
+                prompt_version=str(_setting(self.settings, "prompt_version", "1.0.0")),
             )
             answer = await self.answer_generator.generate(question=repair_prompt, context=context)
             validation = validate_citations(answer, labeled_sources)

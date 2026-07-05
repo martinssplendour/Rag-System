@@ -74,7 +74,7 @@ class Settings:
     retrieval_candidate_count = 12
     retrieval_min_similarity = 0.45
     retrieval_high_confidence_similarity = 0.75
-    prompt_version = "test"
+    prompt_version = "1.0.0"
 
 
 class FakeEmbeddingProvider:

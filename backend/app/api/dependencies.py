@@ -7,6 +7,8 @@ clients themselves -- see python/fastapi.md dependency-injection rule.
 
 from __future__ import annotations
 
+import logging
+import secrets
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
@@ -20,7 +22,7 @@ from app.core.security import InvalidTokenError, decode_access_token
 from app.rag.embeddings import EmbeddingProvider
 from app.rag.llm_providers import AnswerGenerator
 from app.rag.retriever import RetrievalService
-from app.repositories.answers import AnswerRepository, SQLiteAnswerRepository
+from app.repositories.answers import AnswerRepository, PostgresAnswerRepository
 from app.repositories.users import UserRepository
 from app.services.evidence_assistant_service import EvidenceAssistantService
 from app.storage.base import StorageProvider
@@ -30,6 +32,7 @@ from app.vectorstores.base import VectorStore
 # (consistent error envelope) instead of FastAPI's default 403 with a
 # differently-shaped body.
 _bearer_scheme = HTTPBearer(auto_error=False)
+logger = logging.getLogger("market_access_evidence_assistant")
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,8 @@ def get_current_principal(
     header and returns the workspace_id claim from it -- this is what
     actually gives each registered user their own isolated data, since
     every document/chunk/answer query already filters by workspace_id.
+    ``auth_mode=api_key`` is app-level protection for demos/integrations:
+    callers send X-API-Key and use DEFAULT_WORKSPACE_ID.
     """
     settings = request.app.state.settings
 
@@ -95,6 +100,22 @@ def get_current_principal(
             is_admin_claim=bool(claims.get("is_admin")),
         )
 
+    if settings.auth_mode == "api_key":
+        supplied_key = request.headers.get("X-API-Key", "")
+        expected_key = settings.app_api_key or ""
+        if not supplied_key:
+            logger.warning("api_key_auth_failed reason=missing")
+            raise AppError("UNAUTHORIZED", "Authentication required.", 401)
+        if not secrets.compare_digest(supplied_key, expected_key):
+            logger.warning("api_key_auth_failed reason=invalid")
+            raise AppError("UNAUTHORIZED", "Authentication required.", 401)
+        return Principal(
+            user_id=None,
+            workspace_id=settings.default_workspace_id,
+            email=None,
+            is_admin_claim=True,
+        )
+
     raise AppError(
         "AUTH_MODE_NOT_SUPPORTED", f"Unsupported AUTH_MODE configured: {settings.auth_mode}", 500
     )
@@ -110,6 +131,8 @@ async def require_admin_upload(
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     if settings.auth_mode == "disabled":
+        return
+    if settings.auth_mode == "api_key" and principal.is_admin_claim:
         return
     if principal.user_id is None:
         raise AppError("INVALID_TOKEN", "The provided token is missing a subject claim.", 401)
@@ -145,7 +168,7 @@ def get_answer_generator(request: Request) -> AnswerGenerator:
 def get_answer_repository(
     session: AsyncSession = Depends(get_db_session),
 ) -> AnswerRepository:
-    return SQLiteAnswerRepository(session)
+    return PostgresAnswerRepository(session)
 
 
 def get_evidence_assistant_service(

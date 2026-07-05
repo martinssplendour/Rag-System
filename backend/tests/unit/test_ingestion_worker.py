@@ -20,10 +20,11 @@ from app.storage.local import LocalStorageProvider
 async def test_ingestion_worker_retries_before_final_failure(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    postgres_database_url: str,
 ) -> None:
     caplog.set_level(logging.INFO, logger="market_access_evidence_assistant")
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'retry.db').as_posix()}",
+        database_url=postgres_database_url,
         local_storage_dir=tmp_path / "uploads",
         chroma_persist_dir=tmp_path / "chroma",
         embedding_provider="mock",

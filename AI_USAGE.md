@@ -26,8 +26,8 @@ cd ../frontend
 npm.cmd run build
 ```
 
-The backend test suite uses mock LLM and embedding providers, isolated SQLite databases, isolated
-Chroma directories, and temporary upload storage.
+The backend test suite uses mock LLM and embedding providers, isolated temporary Postgres
+databases, isolated Chroma directories, and temporary upload storage.
 
 ## Risks and Controls
 

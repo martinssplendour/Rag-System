@@ -1,7 +1,7 @@
 """FastAPI application factory.
 
 ``create_app`` takes an optional ``Settings`` override so tests can build a
-fully isolated app instance (temp SQLite file, temp Chroma dir, mock
+fully isolated app instance (temp Postgres database, temp Chroma dir, mock
 providers) without monkeypatching global state. See python/fastapi.md:
 "Put app construction in create_app()".
 """
@@ -23,6 +23,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging, request_context_middleware
 from app.rag.embeddings import get_embedding_provider
 from app.rag.llm_providers import create_answer_generator
+from app.rag.prompts import load_repair_instruction, load_system_prompt
 from app.rag.retrieval_cache import maybe_cache_retriever
 from app.rag.retriever import ChromaRetriever
 from app.repositories.database import build_engine, build_session_factory, create_all
@@ -32,16 +33,31 @@ from app.vectorstores.chroma_store import ChromaVectorStore, build_chroma_resour
 
 
 def _validate_auth_config(settings: Settings) -> None:
+    supported_auth_modes = {"disabled", "jwt", "api_key"}
+    if settings.auth_mode not in supported_auth_modes:
+        raise RuntimeError(f"Unsupported AUTH_MODE configured: {settings.auth_mode}")
     if settings.auth_mode == "jwt" and not settings.jwt_secret:
         raise RuntimeError(
             "AUTH_MODE=jwt requires JWT_SECRET to be set. Refusing to start with an "
             "unsigned/guessable token configuration."
         )
+    if settings.auth_mode == "api_key" and (
+        not settings.app_api_key or settings.app_api_key == "change-me"
+    ):
+        raise RuntimeError(
+            "AUTH_MODE=api_key requires APP_API_KEY to be set to a non-placeholder value."
+        )
+
+
+def _validate_prompt_config(settings: Settings) -> None:
+    load_system_prompt(settings.prompt_version)
+    load_repair_instruction(settings.prompt_version)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or get_settings()
     _validate_auth_config(resolved_settings)
+    _validate_prompt_config(resolved_settings)
     configure_logging(resolved_settings.log_level)
 
     @asynccontextmanager
@@ -107,9 +123,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=resolved_settings.cors_origins_list,
-        # Auth is Bearer-token-in-header (JWT/API key), never cookies, so
-        # credentialed CORS is unnecessary attack surface -- fetch/XHR can
-        # send an Authorization header without credentials:"include".
+        # Auth is header-based (JWT Authorization or X-API-Key), never cookies,
+        # so credentialed CORS is unnecessary attack surface.
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],

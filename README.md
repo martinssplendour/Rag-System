@@ -29,11 +29,50 @@ http://localhost:8080
 
 This starts:
 
+- `postgres`: Postgres for users, documents, chunks, ingestion jobs, questions, and answers.
 - `frontend`: Nginx serving the built React/Vite app.
 - `backend`: FastAPI on the internal Docker network.
 
-Only Nginx is exposed to the browser. Frontend requests use `/api/*`, and Nginx proxies those
-requests to FastAPI.
+Only Nginx is exposed to the browser. Postgres and FastAPI stay on the Docker network. Frontend
+requests use `/api/*`, and Nginx proxies those requests to FastAPI.
+
+## API Documentation
+
+With the Docker Compose app running:
+
+- Swagger UI: `http://localhost:8080/api/docs`
+- OpenAPI JSON: `http://localhost:8080/api/openapi.json`
+
+When running the backend directly from `backend/`:
+
+- Swagger UI: `http://localhost:8000/docs`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+
+## Quality Gates
+
+GitHub Actions runs CI on pushes to `main` and on pull requests:
+
+- Backend lint: `ruff check app tests ../scripts`
+- Backend tests: `pytest tests/unit tests/integration -q`
+- Backend Postgres smoke: app startup and readiness query against Postgres
+- Frontend build: `npm ci` and `npm run build`
+
+## RAG Evaluation
+
+The evaluator uses the 10 suggested questions from the technical-test PDF:
+
+```bash
+python scripts/evaluate_rag.py --mode mock
+python scripts/evaluate_rag.py --mode live
+```
+
+It seeds the provided candidate dataset through `POST /documents`, calls `/ask`, and checks expected
+documents, valid source cards, source concepts, and configured answer concepts. The PDF's example
+answer is used as an answer-concept check for the UK evidence-gaps question.
+
+Mock mode is an offline pipeline sanity check. Live mode uses Gemini and is the stronger answer
+quality check. The dataset zip must be available locally as
+`kintiga_market_access_candidate_dataset.zip`; live mode also requires `GEMINI_API_KEY`.
 
 ## Mock vs Live Mode
 
@@ -45,12 +84,13 @@ npm run app
 
 Mock mode uses:
 
+- `postgres-data` for app metadata
 - `EMBEDDING_PROVIDER=mock`
 - `LLM_PROVIDER=mock`
 - `AUTH_MODE=jwt`
 - `JWT_SECRET` loaded from your local `.env`
 - `ADMIN_EMAILS=admin@example.com` unless overridden
-- a separate `backend-mock-data` Docker volume
+- `backend-mock-data` for uploaded files and Chroma vectors
 
 Only admin users can upload evidence. To make your own login an admin, set:
 
@@ -68,15 +108,17 @@ npm run app:live
 
 Live mode reads secrets from `backend/.env` and uses:
 
+- `postgres-live-data` for app metadata
 - `EMBEDDING_PROVIDER=gemini`
 - `EMBEDDING_MODEL=models/gemini-embedding-001`
 - `EMBEDDING_DIMENSION=3072`
 - `LLM_PROVIDER=gemini`
 - `CHAT_MODEL=gemini-3.5-flash`
-- a separate `backend-live-data` Docker volume
+- `backend-live-data` for uploaded files and Chroma vectors
 
-The separate volumes matter because mock embeddings and Gemini embeddings have different vector
-dimensions and cannot safely share the same Chroma collection.
+The separate Postgres and backend data volumes matter because mock and live runs should not share
+document metadata, ingestion state, or Chroma collections. Mock embeddings and Gemini embeddings
+also have different vector dimensions and cannot safely share the same Chroma collection.
 
 Stop the stack:
 

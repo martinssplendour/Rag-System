@@ -8,7 +8,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.rag.prompts import SYSTEM_PROMPT, build_user_prompt
+from app.rag.prompts import build_user_prompt, load_system_prompt
 from app.schemas.answers import INSUFFICIENT_EVIDENCE_ANSWER
 
 
@@ -88,12 +88,14 @@ class LangChainAnswerGenerator:
         model_name: str,
         timeout_seconds: int,
         max_retries: int,
+        system_prompt: str,
     ) -> None:
         self.chat_model = chat_model
         self.provider_name = provider_name
         self.model_name = model_name
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.system_prompt = system_prompt
 
     async def generate(
         self,
@@ -104,7 +106,7 @@ class LangChainAnswerGenerator:
         del response_language
         chain = self._chain()
         payload = {
-            "system_prompt": SYSTEM_PROMPT,
+            "system_prompt": self.system_prompt,
             "user_prompt": build_user_prompt(question, context),
         }
         return await self._invoke_with_retries(chain, payload)
@@ -142,15 +144,16 @@ def create_answer_generator(settings: Any) -> AnswerGenerator:
     provider = str(getattr(settings, "llm_provider", "mock")).lower()
     timeout_seconds = int(getattr(settings, "llm_timeout_seconds", 45))
     max_retries = int(getattr(settings, "llm_max_retries", 2))
+    system_prompt = load_system_prompt(str(getattr(settings, "prompt_version", "1.0.0")))
 
     if provider == "mock":
         return MockAnswerGenerator()
     if provider == "openai":
-        return _create_openai_generator(settings, timeout_seconds, max_retries)
+        return _create_openai_generator(settings, timeout_seconds, max_retries, system_prompt)
     if provider == "azure_openai":
-        return _create_azure_generator(settings, timeout_seconds, max_retries)
+        return _create_azure_generator(settings, timeout_seconds, max_retries, system_prompt)
     if provider in {"gemini", "google", "google_genai"}:
-        return _create_gemini_generator(settings, timeout_seconds, max_retries)
+        return _create_gemini_generator(settings, timeout_seconds, max_retries, system_prompt)
     raise LLMProviderConfigurationError(f"Unsupported LLM_PROVIDER: {provider}")
 
 
@@ -158,6 +161,7 @@ def _create_openai_generator(
     settings: Any,
     timeout_seconds: int,
     max_retries: int,
+    system_prompt: str,
 ) -> LangChainAnswerGenerator:
     try:
         from langchain_openai import ChatOpenAI
@@ -179,6 +183,7 @@ def _create_openai_generator(
         model_name=model,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
+        system_prompt=system_prompt,
     )
 
 
@@ -186,6 +191,7 @@ def _create_azure_generator(
     settings: Any,
     timeout_seconds: int,
     max_retries: int,
+    system_prompt: str,
 ) -> LangChainAnswerGenerator:
     try:
         from langchain_openai import AzureChatOpenAI
@@ -211,6 +217,7 @@ def _create_azure_generator(
         model_name=deployment,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
+        system_prompt=system_prompt,
     )
 
 
@@ -218,6 +225,7 @@ def _create_gemini_generator(
     settings: Any,
     timeout_seconds: int,
     max_retries: int,
+    system_prompt: str,
 ) -> LangChainAnswerGenerator:
     try:
         from langchain_google_genai import ChatGoogleGenerativeAI
@@ -249,6 +257,7 @@ def _create_gemini_generator(
         model_name=model,
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
+        system_prompt=system_prompt,
     )
 
 

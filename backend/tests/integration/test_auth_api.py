@@ -16,15 +16,35 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest_asyncio.fixture
-async def jwt_client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
+async def jwt_client(tmp_path: Path, postgres_database_url: str) -> AsyncIterator[AsyncClient]:
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'jwt_test.db').as_posix()}",
+        database_url=postgres_database_url,
         storage_backend="local",
         local_storage_dir=tmp_path / "uploads",
         chroma_persist_dir=tmp_path / "chroma",
         auth_mode="jwt",
         jwt_secret="integration-test-secret-not-for-real-use",
         admin_emails="upload-admin@example.com,isolation-alice@example.com,isolation-bob@example.com",
+        embedding_provider="mock",
+        llm_provider="mock",
+        ingestion_worker_enabled=False,
+    )
+    app = create_app(settings)
+    transport = ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+
+@pytest_asyncio.fixture
+async def api_key_client(tmp_path: Path, postgres_database_url: str) -> AsyncIterator[AsyncClient]:
+    settings = Settings(
+        database_url=postgres_database_url,
+        storage_backend="local",
+        local_storage_dir=tmp_path / "uploads",
+        chroma_persist_dir=tmp_path / "chroma",
+        auth_mode="api_key",
+        app_api_key="integration-test-api-key",
         embedding_provider="mock",
         llm_provider="mock",
         ingestion_worker_enabled=False,
@@ -206,7 +226,6 @@ async def test_two_users_documents_do_not_collide(jwt_client: AsyncClient):
 
 async def test_jwt_mode_without_secret_refuses_to_start(tmp_path: Path):
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'no_secret.db').as_posix()}",
         chroma_persist_dir=tmp_path / "chroma2",
         local_storage_dir=tmp_path / "uploads2",
         auth_mode="jwt",
@@ -214,3 +233,56 @@ async def test_jwt_mode_without_secret_refuses_to_start(tmp_path: Path):
     )
     with pytest.raises(RuntimeError, match="JWT_SECRET"):
         create_app(settings)
+
+
+async def test_api_key_mode_without_real_key_refuses_to_start(tmp_path: Path):
+    settings = Settings(
+        chroma_persist_dir=tmp_path / "chroma3",
+        local_storage_dir=tmp_path / "uploads3",
+        auth_mode="api_key",
+        app_api_key="change-me",
+    )
+    with pytest.raises(RuntimeError, match="APP_API_KEY"):
+        create_app(settings)
+
+
+async def test_api_key_mode_rejects_missing_key(api_key_client: AsyncClient):
+    response = await api_key_client.get("/documents")
+
+    assert response.status_code == 401
+    error = response.json()["error"]
+    assert error["code"] == "UNAUTHORIZED"
+    assert error["message"] == "Authentication required."
+
+
+async def test_api_key_mode_rejects_wrong_key(api_key_client: AsyncClient):
+    response = await api_key_client.get("/documents", headers={"X-API-Key": "wrong-key"})
+
+    assert response.status_code == 401
+    error = response.json()["error"]
+    assert error["code"] == "UNAUTHORIZED"
+    assert error["message"] == "Authentication required."
+
+
+async def test_api_key_mode_uses_same_public_error_for_missing_and_wrong_key(
+    api_key_client: AsyncClient,
+):
+    missing = await api_key_client.get("/documents")
+    wrong = await api_key_client.get("/documents", headers={"X-API-Key": "wrong-key"})
+
+    missing_error = missing.json()["error"]
+    wrong_error = wrong.json()["error"]
+    assert missing.status_code == wrong.status_code == 401
+    assert missing_error["code"] == wrong_error["code"] == "UNAUTHORIZED"
+    assert missing_error["message"] == wrong_error["message"] == "Authentication required."
+
+
+async def test_api_key_mode_accepts_valid_key_and_allows_upload(api_key_client: AsyncClient):
+    response = await api_key_client.post(
+        "/documents",
+        files={"file": ("api_key_doc.txt", b"API key protected upload.", "text/plain")},
+        headers={"X-API-Key": "integration-test-api-key"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["filename"] == "api_key_doc.txt"

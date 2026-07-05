@@ -1,4 +1,4 @@
-"""Seed the local SQLite + Chroma store with the four real candidate
+"""Seed the configured Postgres database + Chroma store with the four real candidate
 dataset documents, going through the same document_service.create_document
 path that POST /documents uses.
 
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import sqlite3
 import sys
 import zipfile
 from pathlib import Path
@@ -28,6 +27,7 @@ DATASET_ZIP = REPO_ROOT / "kintiga_market_access_candidate_dataset.zip"
 
 sys.path.insert(0, str(BACKEND_ROOT))
 
+from sqlalchemy import text  # noqa: E402
 from starlette.datastructures import Headers, UploadFile  # noqa: E402
 
 from app.api.errors import AppError  # noqa: E402
@@ -111,29 +111,21 @@ async def _seed_one(
     )
 
 
-def _verify() -> None:
-    """Assert the two dataset-specific defects from
-    BUILD_SPEC_PART1_INGESTION.md section 2 are actually fixed."""
-    settings = get_settings()
-    db_path = settings.database_url.split("///", 1)[-1]
-    conn = sqlite3.connect(db_path)
-    try:
-        rows = conn.execute("SELECT raw_text FROM document_chunks").fetchall()
-        all_raw_text = " ".join(row[0] for row in rows).lower()
-        for heading in TRAILER_HEADINGS:
-            assert heading not in all_raw_text, f"trailer heading leaked into index: {heading!r}"
+async def _verify(session_factory) -> None:
+    """Assert the dataset-specific ingestion checks for any SQL backend."""
+    async with session_factory() as session:
+        rows = (await session.execute(text("SELECT raw_text FROM document_chunks"))).fetchall()
 
-        german_row = conn.execute(
-            "SELECT c.raw_text FROM document_chunks c JOIN documents d ON d.id = c.document_id "
-            "WHERE d.language = 'de' AND c.raw_text LIKE '%ü%' LIMIT 1"
-        ).fetchone()
-        assert german_row is not None, "expected at least one chunk with a preserved German umlaut (u-umlaut)"
+    all_raw_text = " ".join(str(row[0]) for row in rows if row[0]).lower()
+    for heading in TRAILER_HEADINGS:
+        assert heading not in all_raw_text, f"trailer heading leaked into index: {heading!r}"
 
-        print("\nVerification passed:")
-        print("  - no trailer/test-question sections leaked into indexed content")
-        print("  - German diacritics preserved in at least one chunk")
-    finally:
-        conn.close()
+    umlaut_found = any("\u00fc" in str(row[0]).casefold() for row in rows if row[0])
+    assert umlaut_found, "expected at least one chunk with a preserved German umlaut (u-umlaut)"
+
+    print("\nVerification passed:")
+    print("  - no trailer/test-question sections leaked into indexed content")
+    print("  - German diacritics preserved in at least one chunk")
 
 
 async def main() -> None:
@@ -182,8 +174,8 @@ async def main() -> None:
         ):
             pass
 
+    await _verify(session_factory)
     await engine.dispose()
-    _verify()
 
 
 if __name__ == "__main__":

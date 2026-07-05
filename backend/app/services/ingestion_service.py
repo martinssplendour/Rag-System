@@ -1,5 +1,5 @@
 """Ingestion pipeline: load -> extract header metadata -> clean -> chunk ->
-embed -> persist (SQLite + Chroma).
+embed -> persist (Postgres metadata + Chroma vectors).
 
 Runs after document_service has already created the ``documents`` row and
 stored the original file/text -- this module only turns that content into

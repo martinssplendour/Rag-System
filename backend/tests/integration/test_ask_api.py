@@ -17,9 +17,9 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest_asyncio.fixture
-async def ask_client(tmp_path: Path) -> AsyncIterator[AsyncClient]:
+async def ask_client(tmp_path: Path, postgres_database_url: str) -> AsyncIterator[AsyncClient]:
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{(tmp_path / 'ask_flow.db').as_posix()}",
+        database_url=postgres_database_url,
         storage_backend="local",
         local_storage_dir=tmp_path / "uploads",
         chroma_persist_dir=tmp_path / "chroma",

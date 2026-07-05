@@ -12,14 +12,16 @@ background ingestion, retrieval, and grounded answer generation.
 - `GET /documents` — list ingested documents and their status
 - `POST /ask` — grounded question answering over ingested documents (Part 2)
 - Background ingestion pipeline: load stored original → extract header metadata → clean →
-  chunk (table-row-aware) → embed → persist (SQLite + Chroma) → mark `ready`/`failed`
+  chunk (table-row-aware) → embed → persist (Postgres metadata + Chroma vectors) → mark
+  `ready`/`failed`
 - Swagger/OpenAPI at `/docs`, raw schema at `/openapi.json`
 
 ## Prerequisites
 
 - Python 3.11+
-- No external services required for local development — everything runs against local SQLite +
-  Chroma with the mock embedding provider by default.
+- Postgres for app metadata.
+- Chroma for vector search.
+- The root Docker Compose app starts Postgres automatically.
 
 ## Setup
 
@@ -29,7 +31,7 @@ python -m venv .venv
 .venv/Scripts/activate        # Windows
 # source .venv/bin/activate   # macOS/Linux
 pip install -e ".[dev]"
-cp .env.example .env          # defaults are already local-only; edit only if needed
+cp .env.example .env
 ```
 
 ## Running the API
@@ -43,8 +45,9 @@ uvicorn app.main:app --reload --port 8000
 - Swagger UI: `http://localhost:8000/docs`
 - OpenAPI schema: `http://localhost:8000/openapi.json`
 
-Local data (SQLite DB, Chroma collection, uploaded files) is written to `./data/` and is
-gitignored. Delete that directory to reset to a clean state.
+For direct backend runs, `DATABASE_URL` must point at Postgres. Chroma data and uploaded files are
+written to `./data/` unless overridden. The root Docker Compose app starts Postgres and stores
+uploaded files/Chroma data in Docker volumes.
 
 `POST /documents` validates and stores the uploaded content, creates a durable `ingestion_jobs`
 row, and returns quickly with the document in `processing` status. The in-process background worker
@@ -78,9 +81,9 @@ cd backend
 pytest tests/unit tests/integration -v
 ```
 
-All tests use the mock embedding provider — no API key or network access is required. Each test
-gets a fully isolated app instance (temp SQLite file, temp Chroma directory) via the `create_app()`
-factory, so tests don't share state or require a running server.
+All tests use the mock embedding provider, so no LLM or embedding API key is required. DB-backed
+tests require Postgres through `TEST_DATABASE_URL` and create/drop an isolated temporary database
+per test. CI provides this automatically.
 
 ## Linting
 
@@ -99,6 +102,11 @@ Set `AUTH_MODE` in `.env`:
   ```bash
   python -c "import secrets; print(secrets.token_urlsafe(32))"
   ```
+- `api_key` — app-level API key protection for demos/integrations. Requires `APP_API_KEY` to be set
+  to a non-placeholder value. Protected requests must include `X-API-Key: <APP_API_KEY>` and use
+  `DEFAULT_WORKSPACE_ID`. API-key callers are treated as upload admins. Missing and incorrect API
+  keys intentionally return the same public `UNAUTHORIZED` response; the server logs keep the
+  internal reason.
 
 Flow:
 
@@ -120,12 +128,10 @@ Login/register intentionally return the identical `INVALID_CREDENTIALS` error fo
 password" and "no such account" — distinguishing them would let a caller enumerate registered
 emails.
 
-**Not implemented**: `AUTH_MODE=api_key` is declared in `Settings` (`app_api_key` field) but has no
-enforcement code behind it — it is inert configuration, not a working mode. Only `disabled` and
-`jwt` actually do anything. There is also no refresh-token rotation, logout/revocation, or
-rate-limiting on `/auth/login` (brute-force protection) — access tokens are short-lived (60 minutes
-by default, `JWT_EXPIRES_MINUTES`) but a compromised token is valid until it expires; acceptable for
-a prototype, a real deployment would want refresh tokens plus a revocation list or shorter expiry.
+There is no refresh-token rotation, logout/revocation, or rate-limiting on `/auth/login`
+(brute-force protection) — access tokens are short-lived (60 minutes by default,
+`JWT_EXPIRES_MINUTES`) but a compromised token is valid until it expires; acceptable for a prototype,
+a real deployment would want refresh tokens plus a revocation list or shorter expiry.
 
 ## Provider modes
 
@@ -155,6 +161,9 @@ The cache stores question embeddings and chunk IDs, not raw questions or final a
 short-lived, size-limited, tenant-scoped, and invalidated when the Chroma collection chunk count
 changes.
 
+Prompts are versioned Markdown files in `backend/prompts/`, selected by `PROMPT_VERSION`. The app
+loads them at startup and refuses to start if the configured prompt version is not available.
+
 ## Known limitations
 
 - **PDF table rows are not individually chunked.** Unlike the pipe-delimited tables in the `.txt`
@@ -174,8 +183,8 @@ changes.
   and queue-depth metrics.
 - **Auth defaults to disabled** (`AUTH_MODE=disabled`) for local dev/tests. Real per-user isolation
   is available via `AUTH_MODE=jwt` (see Authentication above) but is not the default, so a fresh
-  clone is open by default until `.env` is configured. `AUTH_MODE=api_key` is declared but not
-  implemented — there is no code path that checks it.
+  clone is open by default until `.env` is configured. `AUTH_MODE=api_key` provides simple
+  app-level protection but does not provide per-user tenancy; use JWT mode for multi-user isolation.
 - **No brute-force protection on `/auth/login`** and no refresh-token rotation/revocation. Access
   tokens are short-lived (60 min default) but cannot be invalidated before then. Acceptable for a
   prototype; a production deployment needs rate limiting on auth endpoints and a revocation

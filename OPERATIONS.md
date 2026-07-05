@@ -3,7 +3,7 @@
 ## Health Checks
 
 - `GET /health` confirms the API process is alive.
-- `GET /health/ready` confirms the API can reach SQLite and Chroma.
+- `GET /health/ready` confirms the API can reach Postgres and Chroma.
 
 Use `/health` for lightweight liveness checks and `/health/ready` before routing traffic to the
 service.
@@ -20,7 +20,17 @@ Dangerous values fail at startup instead of failing during a user request:
 - retrieval thresholds must be between zero and one;
 - retrieval cache TTL and cache sizes must be positive.
 
-`AUTH_MODE=jwt` also refuses to start without `JWT_SECRET`.
+`AUTH_MODE=jwt` refuses to start without `JWT_SECRET`. `AUTH_MODE=api_key` refuses to start unless
+`APP_API_KEY` is set to a non-placeholder value; callers pass it in the `X-API-Key` header. Missing
+and incorrect API keys return the same public `UNAUTHORIZED` response, while server logs record the
+internal reason.
+
+Prompt text lives in versioned Markdown files under `backend/prompts/`. `PROMPT_VERSION` selects
+which prompt files are loaded, and the app refuses to start if that version is not present.
+
+The app uses Postgres for users, documents, chunks, ingestion jobs, questions, and answers.
+DB-backed tests create isolated temporary Postgres databases through the same SQLAlchemy repository
+layer.
 
 ## Failure Handling
 

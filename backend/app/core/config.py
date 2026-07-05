@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "http://localhost:5173"
 
-    database_url: str = f"sqlite+aiosqlite:///{(DEFAULT_DATA_DIR / 'app.db').as_posix()}"
+    database_url: str = "postgresql+asyncpg://kintiga:kintiga_dev_password@localhost:5432/kintiga"
     storage_backend: str = "local"
     local_storage_dir: Path = DEFAULT_DATA_DIR / "uploads"
     chroma_persist_dir: Path = DEFAULT_DATA_DIR / "chroma"

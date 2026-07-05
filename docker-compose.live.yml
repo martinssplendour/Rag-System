@@ -1,8 +1,15 @@
 services:
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB_LIVE:-kintiga_live}
+    volumes:
+      - postgres-live-data:/var/lib/postgresql/data
+
   backend:
     env_file:
       - backend/.env
     environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kintiga}:${POSTGRES_PASSWORD:-kintiga_dev_password}@postgres:5432/${POSTGRES_DB_LIVE:-kintiga_live}
       EMBEDDING_PROVIDER: gemini
       EMBEDDING_MODEL: models/gemini-embedding-001
       EMBEDDING_DIMENSION: "3072"
@@ -13,4 +20,5 @@ services:
       - backend-live-data:/app/data
 
 volumes:
+  postgres-live-data:
   backend-live-data:
