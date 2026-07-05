@@ -1,0 +1,16 @@
+services:
+  backend:
+    env_file:
+      - backend/.env
+    environment:
+      EMBEDDING_PROVIDER: gemini
+      EMBEDDING_MODEL: models/gemini-embedding-001
+      EMBEDDING_DIMENSION: "3072"
+      LLM_PROVIDER: gemini
+      CHAT_MODEL: gemini-3.5-flash
+      RETRIEVAL_MIN_SIMILARITY: "0.45"
+    volumes:
+      - backend-live-data:/app/data
+
+volumes:
+  backend-live-data:

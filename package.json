@@ -1,0 +1,13 @@
+{
+  "name": "kintiga-evidence-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "app": "docker compose up --build",
+    "app:mock": "docker compose up --build",
+    "app:live": "docker compose -f docker-compose.yml -f docker-compose.live.yml up --build",
+    "app:down": "docker compose down",
+    "app:down:live": "docker compose -f docker-compose.yml -f docker-compose.live.yml down",
+    "app:logs": "docker compose logs -f"
+  }
+}

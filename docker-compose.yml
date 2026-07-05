@@ -1,0 +1,40 @@
+name: kintiga-evidence-assistant
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-disabled}
+      JWT_SECRET: ${JWT_SECRET:-}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-admin@example.com}
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
+      LOCAL_STORAGE_DIR: /app/data/uploads
+      CHROMA_PERSIST_DIR: /app/data/chroma
+      EMBEDDING_PROVIDER: mock
+      LLM_PROVIDER: mock
+      RETRIEVAL_MIN_SIMILARITY: "0.0"
+      CHROMA_COLLECTION_NAME: market_access_chunks
+    volumes:
+      - backend-mock-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  backend-mock-data:
