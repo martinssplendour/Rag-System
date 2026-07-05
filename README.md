@@ -18,7 +18,7 @@ Paste the generated value into `JWT_SECRET`, then use the Nginx-fronted Docker C
 mock/offline mode:
 
 ```bash
-npm run app
+npm run start
 ```
 
 Then open:
@@ -79,7 +79,7 @@ quality check. The dataset zip must be available locally as
 Mock mode is the default:
 
 ```bash
-npm run app
+npm run start
 ```
 
 Mock mode uses:
