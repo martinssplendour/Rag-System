@@ -85,7 +85,7 @@ async def test_authenticated_ingest_to_ask_flow_persists_answer(
     body = answer.json()
     assert body["answer"]
     assert body["sources"]
-    assert body["sources"][0]["source_id"] == "S1"
+    assert body["sources"][0]["source_id"] == "UK-NICE-001"
     assert body["sources"][0]["document_title"] == "NICE hypertension access evidence"
     assert body["confidence"] in {"high", "medium", "low"}
 

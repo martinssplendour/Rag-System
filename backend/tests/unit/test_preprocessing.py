@@ -33,6 +33,7 @@ def test_parse_header_metadata_english_line_per_field():
         "Synthetic Document: UK NICE Oncology Drug Summary\n"
         "Document ID: uk_nice_oncology_drug_summary\n"
         "Country: United Kingdom\n"
+        "Language: English\n"
         "Therapy area: Oncology\n"
         "Technology type: Medicine\n"
         "Assessment body: NICE-style health technology evaluation\n"
@@ -40,6 +41,7 @@ def test_parse_header_metadata_english_line_per_field():
     result = parse_header_metadata(text)
     assert result["external_document_id"] == "uk_nice_oncology_drug_summary"
     assert result["country"] == "United Kingdom"
+    assert result["language"] == "English"
     assert result["therapy_area"] == "Oncology"
     assert result["technology_type"] == "Medicine"
 

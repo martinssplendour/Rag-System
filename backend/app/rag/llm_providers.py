@@ -269,7 +269,7 @@ def _setting_or_env(settings: Any, setting_name: str, env_name: str) -> Any:
 
 
 def _extract_source_ids(context: str) -> list[str]:
-    source_ids = re.findall(r'source_id="(S\d+)"', context)
+    source_ids = re.findall(r'source_id="([^"]+)"', context)
     seen: set[str] = set()
     unique: list[str] = []
     for source_id in source_ids:

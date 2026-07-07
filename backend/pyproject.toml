@@ -24,6 +24,7 @@ dependencies = [
     "pyjwt>=2.8",
     "bcrypt>=4.1",
     "email-validator>=2.1",
+    "lingua-language-detector>=2.0",
 ]
 
 [project.optional-dependencies]

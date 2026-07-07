@@ -81,6 +81,18 @@ async def test_cached_retrieval_invalidates_when_collection_version_changes() ->
     assert retriever.calls == 2
 
 
+@pytest.mark.anyio
+async def test_cached_retrieval_clear_removes_question_and_chunk_entries() -> None:
+    retriever = FakeRetriever()
+    cached = _cached(retriever)
+
+    await cached.retrieve([1.0, 0.0], "workspace-a", None, None, 12)
+    await cached.clear()
+    await cached.retrieve([1.0, 0.0], "workspace-a", None, None, 12)
+
+    assert retriever.calls == 2
+
+
 def test_maybe_cache_retriever_can_be_disabled() -> None:
     retriever = FakeRetriever()
 

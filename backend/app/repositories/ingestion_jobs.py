@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import (
@@ -65,6 +65,10 @@ class IngestionJobRepository:
             .limit(1)
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def delete_by_document(self, document_id: str) -> None:
+        await self._session.execute(delete(IngestionJob).where(IngestionJob.document_id == document_id))
+        await self._session.flush()
 
     async def mark_succeeded(self, job: IngestionJob) -> None:
         job.status = INGESTION_JOB_SUCCEEDED

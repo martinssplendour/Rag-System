@@ -11,6 +11,7 @@ from app.core.config import Settings
 from app.core.constants import (
     SOURCE_TYPE_DOCX,
     SOURCE_TYPE_PDF,
+    STATUS_DELETED,
     STATUS_FAILED,
     STATUS_PROCESSING,
     STATUS_READY,
@@ -149,6 +150,15 @@ async def _run_job_in_session(
     document = await doc_repo.get(job.workspace_id, job.document_id)
     if document is None:
         raise RuntimeError(f"Missing document for ingestion job: {job_id}")
+    if document.status == STATUS_DELETED:
+        logger.info(
+            "ingestion_job_skipped_deleted_document job_id=%s document_id=%s",
+            job.id,
+            document.id,
+        )
+        await job_repo.delete_by_document(document.id)
+        await session.commit()
+        return
     if not document.storage_path:
         raise RuntimeError(f"Document has no stored source content: {document.id}")
     logger.info(
@@ -170,6 +180,7 @@ async def _run_job_in_session(
             title=document.title,
             source_type=document.source_type,
             external_document_id=document.external_document_id,
+            citation_prefix=document.citation_prefix,
             country=document.country,
             country_code=document.country_code,
         ),
@@ -184,6 +195,19 @@ async def _run_job_in_session(
         chunk_size=settings.chunk_size,
         chunk_overlap=settings.chunk_overlap,
     )
+
+    await session.refresh(document)
+    if document.status == STATUS_DELETED:
+        await chunk_repo.delete_by_document(document.id)
+        vector_store.delete_by_document(document.id)
+        await job_repo.delete_by_document(document.id)
+        logger.info(
+            "ingestion_job_discarded_deleted_document job_id=%s document_id=%s",
+            job.id,
+            document.id,
+        )
+        await session.commit()
+        return
 
     await doc_repo.fill_missing_metadata(document, result.extracted_metadata)
     await doc_repo.update_status(
@@ -220,6 +244,12 @@ async def _handle_job_failure(
         doc_repo = DocumentRepository(session)
         document = await doc_repo.get(job.workspace_id, job.document_id)
         if document is not None:
+            if document.status == STATUS_DELETED:
+                await ChunkRepository(session).delete_by_document(document.id)
+                vector_store.delete_by_document(document.id)
+                await job_repo.delete_by_document(document.id)
+                await session.commit()
+                return
             chunk_repo = ChunkRepository(session)
             await chunk_repo.delete_by_document(document.id)
             vector_store.delete_by_document(document.id)

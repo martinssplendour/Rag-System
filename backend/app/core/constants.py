@@ -19,6 +19,7 @@ SOURCE_TYPE_DIRECT_TEXT = "direct_text"
 STATUS_PROCESSING = "processing"
 STATUS_READY = "ready"
 STATUS_FAILED = "failed"
+STATUS_DELETED = "deleted"
 
 INGESTION_JOB_PENDING = "pending"
 INGESTION_JOB_RUNNING = "running"
@@ -32,6 +33,7 @@ INGESTION_JOB_FAILED = "failed"
 HEADER_KEY_ALIASES: dict[str, tuple[str, ...]] = {
     "external_document_id": ("Document ID", "Dokument-ID"),
     "country": ("Country", "Land"),
+    "language": ("Language", "Sprache"),
     "therapy_area": ("Therapy area", "Therapiegebiet"),
     "technology_type": ("Technology type", "Technologietyp", "Technology"),
     "assessment_body": ("Assessment body", "Bewertungsumfeld"),

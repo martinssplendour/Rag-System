@@ -74,6 +74,9 @@ Mock mode is an offline pipeline sanity check. Live mode uses Gemini and is the 
 quality check. The dataset zip must be available locally as
 `kintiga_market_access_candidate_dataset.zip`; live mode also requires `GEMINI_API_KEY`.
 
+The chunking and table-extraction quality audit is documented in
+[docs/CHUNKING_QUALITY_REPORT.md](docs/CHUNKING_QUALITY_REPORT.md).
+
 ## Mock vs Live Mode
 
 Mock mode is the default:
@@ -99,6 +102,10 @@ ADMIN_EMAILS=your-email@example.com
 ```
 
 Then register or log in with that same email.
+
+Uploads ask only for country and language. Country is a dropdown; language can be selected or left
+as auto-detect. Auto-detection runs locally during background ingestion and stores stable language
+codes such as `en` and `de`.
 
 Live Gemini mode:
 
@@ -147,5 +154,7 @@ npm run app:logs
 - Evidence uploads accept PDF, TXT, and DOCX files.
 - Upload requests return quickly with `status="processing"`; a background ingestion worker parses,
   chunks, embeds, and marks documents `ready` or `failed`.
+- Admin users can delete documents. Deletion soft-hides the document first, then cleans Chroma
+  vectors, chunks, stored files, ingestion jobs, and retrieval caches in the background.
 - Frontend-only development can still use `cd frontend && npm run dev`, but the normal app
   entry point is the Nginx/Compose command above.

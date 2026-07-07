@@ -10,11 +10,13 @@ never paraphrased, unlike table rows.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.rag.preprocessing import TableRow, build_row_semantic_block, extract_table_rows
+from app.rag.tables import StructuredTable, table_metadata, table_row_text, whole_table_text
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,7 @@ class ChunkDraft:
     section_title: str | None
     page_number: int | None
     start_index: int | None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _looks_like_heading(line: str) -> bool:
@@ -131,6 +134,56 @@ def _chunk_table_rows(
         )
         for row in rows
     ]
+
+
+def chunk_structured_table(
+    document_title: str,
+    table: StructuredTable,
+    *,
+    table_id: str,
+    include_whole_table: bool = True,
+) -> list[ChunkDraft]:
+    drafts: list[ChunkDraft] = []
+    base_metadata = table_metadata(table)
+    if include_whole_table:
+        text = whole_table_text(document_title=document_title, table=table)
+        drafts.append(
+            ChunkDraft(
+                content=text,
+                raw_text=text,
+                section_title=table.title,
+                page_number=table.page_number,
+                start_index=None,
+                metadata={
+                    **base_metadata,
+                    "chunk_type": "table",
+                    "table_id": table_id,
+                    "table_index": table.table_index,
+                    "row_count": len(table.rows),
+                },
+            )
+        )
+
+    for row_index, row in enumerate(table.rows, start=1):
+        text = table_row_text(document_title=document_title, table=table, row=row)
+        drafts.append(
+            ChunkDraft(
+                content=text,
+                raw_text=text,
+                section_title=table.title,
+                page_number=table.page_number,
+                start_index=None,
+                metadata={
+                    **base_metadata,
+                    "chunk_type": "table_row",
+                    "table_id": table_id,
+                    "table_index": table.table_index,
+                    "row_index": row_index,
+                    "table_row": row,
+                },
+            )
+        )
+    return drafts
 
 
 def chunk_document(

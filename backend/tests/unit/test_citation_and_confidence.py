@@ -9,16 +9,16 @@ from app.services.confidence_service import calculate_confidence
 
 def test_validate_citations_rejects_unknown_source_ids() -> None:
     answer = GroundedAnswer(
-        answer="Answer [S1][S9]",
-        source_ids=["S1", "S9"],
+        answer="Answer [UK-NICE-001][UK-NICE-999]",
+        source_ids=["UK-NICE-001", "UK-NICE-999"],
         evidence_sufficient=True,
     )
 
-    result = validate_citations(answer, [_labeled("S1", "chunk-1")])
+    result = validate_citations(answer, [_labeled("UK-NICE-001", "chunk-1")])
 
     assert not result.is_valid
-    assert result.cited_source_ids == ["S1"]
-    assert result.invalid_source_ids == ["S9"]
+    assert result.cited_source_ids == ["UK-NICE-001"]
+    assert result.invalid_source_ids == ["UK-NICE-999"]
 
 
 def test_validate_citations_requires_citation_when_evidence_sufficient() -> None:
@@ -28,15 +28,20 @@ def test_validate_citations_requires_citation_when_evidence_sufficient() -> None
         evidence_sufficient=True,
     )
 
-    result = validate_citations(answer, [_labeled("S1", "chunk-1")])
+    result = validate_citations(answer, [_labeled("UK-NICE-001", "chunk-1")])
 
     assert not result.is_valid
 
 
 def test_source_cards_use_raw_text_for_snippets() -> None:
-    labeled = _labeled("S1", "chunk-1", content="semantic block", raw_text="literal source")
+    labeled = _labeled(
+        "UK-NICE-001",
+        "chunk-1",
+        content="semantic block",
+        raw_text="literal source",
+    )
 
-    cards = source_cards_for_citations([labeled], ["S1"])
+    cards = source_cards_for_citations([labeled], ["UK-NICE-001"])
 
     assert cards[0].snippet == "literal source"
     assert cards[0].snippet != "semantic block"
@@ -45,10 +50,10 @@ def test_source_cards_use_raw_text_for_snippets() -> None:
 
 def test_confidence_tiers() -> None:
     strong_sources = [
-        _source("S1", "chunk-1", "doc-a", 0.81),
-        _source("S2", "chunk-2", "doc-a", 0.78),
+        _source("UK-NICE-001", "chunk-1", "doc-a", 0.81),
+        _source("UK-NICE-002", "chunk-2", "doc-a", 0.78),
     ]
-    medium_sources = [_source("S1", "chunk-1", "doc-a", 0.50)]
+    medium_sources = [_source("UK-NICE-001", "chunk-1", "doc-a", 0.50)]
 
     assert (
         calculate_confidence(

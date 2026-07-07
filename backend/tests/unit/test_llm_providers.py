@@ -23,11 +23,11 @@ async def test_mock_answer_generator_uses_valid_context_source_ids() -> None:
 
     answer = await generator.generate(
         question="What evidence exists?",
-        context='<evidence source_id="S1">Alpha</evidence>',
+        context='<evidence source_id="UK-NICE-001">Alpha</evidence>',
     )
 
     assert answer.evidence_sufficient
-    assert answer.source_ids == ["S1"]
+    assert answer.source_ids == ["UK-NICE-001"]
 
 
 def test_provider_factory_selects_mock() -> None:

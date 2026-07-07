@@ -49,6 +49,13 @@ The background worker owns the slow work:
 - upsert vectors into Chroma;
 - mark the document `ready` or `failed`.
 
+Upload metadata is intentionally narrow. The UI asks only for country and language: country is a
+controlled dropdown that also supplies the stored country code, while language can be selected or
+left as auto-detect. Explicit user metadata wins; missing language is detected locally during async
+ingestion with Lingua, restricted to English, German, French, and Italian, then stored as an ISO
+code (`en`, `de`, `fr`, `it`). Header parsing can fill missing fields, but it does not override
+user-supplied country/language.
+
 This keeps one tenant's large or slow upload from holding an API request open while still preserving
 a simple local setup for reviewers. In production, the Postgres-backed job table and in-process
 worker would be replaced by a durable external queue and separate worker containers.
@@ -58,6 +65,13 @@ Ingestion failures are handled as job state, not HTTP failures. The worker retri
 document `failed` after the final attempt. Partial chunks/vectors are cleaned up after each failed
 attempt. User-facing failure text is generic; the server logs keep the exception details.
 
+Document deletion follows the same non-blocking principle. `DELETE /documents/{document_id}` is
+admin-only and first marks the document `deleted`, which immediately hides it from normal document
+lists and retrieval. Cleanup then runs in the background: Chroma vectors, Postgres chunks, ingestion
+jobs, the stored original file, and process-local retrieval caches are removed. If cleanup races with
+an ingestion job, the worker checks for the deleted status before committing results and discards any
+late output.
+
 ## Retrieval and Grounding
 
 At ask time, `/ask` stays synchronous because the user is waiting for an answer. The service:
@@ -66,7 +80,7 @@ At ask time, `/ask` stays synchronous because the user is waiting for an answer.
 - embeds the question through the same embedding provider abstraction used at ingestion time;
 - retrieves candidates from Chroma;
 - filters by workspace, status, country, and document IDs;
-- assigns request-local source labels such as `S1`;
+- assigns stable source labels such as `UK-NICE-001`, based on a stored per-document citation prefix and chunk number;
 - asks the LLM to answer only from retrieved context;
 - validates citations before returning the response.
 
@@ -124,7 +138,7 @@ retrieval thresholds, model version, prompt version, and citation validation.
 - API-key mode provides simple app-level protection using `X-API-Key` and the default workspace;
   missing and incorrect keys return the same public error to avoid leaking auth details.
 - Uploads validate size, extension, and actual file content.
-- JWT-mode uploads require an admin user.
+- JWT-mode uploads and document deletion require an admin user.
 - Uploaded files are stored through a storage abstraction, outside the web root.
 - The browser never sees provider credentials.
 - Error responses use a safe envelope with request IDs; stack traces and raw validation inputs are

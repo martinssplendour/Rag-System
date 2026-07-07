@@ -7,11 +7,17 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.rag.citation_labels import (
+    build_chunk_source_id,
+    build_document_citation_base,
+)
+
 
 class RetrievedChunk(BaseModel):
     chunk_id: str
     document_id: str
     external_document_id: str | None = None
+    citation_prefix: str | None = None
     content: str
     raw_text: str
     title: str
@@ -118,9 +124,36 @@ def select_final_chunks(
 
 def assign_source_labels(chunks: Sequence[RetrievedChunk]) -> list[LabeledChunk]:
     return [
-        LabeledChunk(source_id=f"S{index}", chunk=chunk)
-        for index, chunk in enumerate(chunks, start=1)
+        LabeledChunk(source_id=_stable_source_id(chunk), chunk=chunk)
+        for chunk in chunks
     ]
+
+
+def _stable_source_id(chunk: RetrievedChunk) -> str:
+    prefix = chunk.citation_prefix or _optional_str(chunk.metadata.get("citation_prefix"))
+    if not prefix:
+        prefix = build_document_citation_base(
+            country=chunk.country or _optional_str(chunk.metadata.get("country")),
+            country_code=chunk.country_code or _optional_str(chunk.metadata.get("country_code")),
+            document_identity=" ".join(
+                value
+                for value in [
+                    chunk.external_document_id,
+                    _optional_str(chunk.metadata.get("external_document_id")),
+                    chunk.title,
+                    chunk.document_id,
+                ]
+                if value
+            ),
+        )
+    chunk_index = chunk.chunk_index
+    if chunk_index is None:
+        chunk_index = _optional_int(chunk.metadata.get("chunk_index"))
+    return build_chunk_source_id(
+        citation_prefix=prefix,
+        chunk_index=chunk_index,
+        chunk_id=chunk.chunk_id,
+    )
 
 
 def distance_to_similarity(distance: float | int | None) -> float:
@@ -160,6 +193,7 @@ def _parse_chroma_query_result(result: dict[str, Any]) -> list[RetrievedChunk]:
                 chunk_id=str(chunk_id),
                 document_id=str(metadata.get("document_id") or ""),
                 external_document_id=_optional_str(metadata.get("external_document_id")),
+                citation_prefix=_optional_str(metadata.get("citation_prefix")),
                 content=str(content or ""),
                 raw_text=raw_text,
                 title=str(metadata.get("title") or "Untitled document"),

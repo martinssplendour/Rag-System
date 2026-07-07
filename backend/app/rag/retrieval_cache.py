@@ -135,6 +135,11 @@ class CachedRetrievalService:
                 stores=self._stores,
             )
 
+    async def clear(self) -> None:
+        async with self._lock:
+            self._question_cache.clear()
+            self._chunk_cache.clear()
+
     async def _find_question_entry(
         self,
         scope_key: str,

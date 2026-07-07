@@ -19,6 +19,7 @@ export interface AuthSession {
 export interface DocumentItem {
   document_id: string;
   external_document_id: string | null;
+  citation_prefix: string | null;
   title: string;
   filename: string | null;
   country: string | null;
@@ -26,12 +27,16 @@ export interface DocumentItem {
   status: DocumentStatus;
   chunk_count: number;
   created_at: string;
-  technology_type: string | null;
 }
 
 export interface DocumentListResponse {
   items: DocumentItem[];
   total: number;
+}
+
+export interface DocumentDeleteResponse {
+  document_id: string;
+  status: "deleted";
 }
 
 export interface AskPayload {

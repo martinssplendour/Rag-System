@@ -23,6 +23,7 @@ DocumentStatus = Literal["processing", "ready", "failed"]
 class DocumentResponse(BaseModel):
     document_id: str
     external_document_id: str | None
+    citation_prefix: str | None
     title: str
     filename: str | None
     country: str | None
@@ -33,7 +34,7 @@ class DocumentResponse(BaseModel):
 
 
 class DocumentListItem(DocumentResponse):
-    technology_type: str | None = None
+    pass
 
 
 class DocumentListResponse(BaseModel):
@@ -41,10 +42,16 @@ class DocumentListResponse(BaseModel):
     total: int
 
 
+class DocumentDeleteResponse(BaseModel):
+    document_id: str
+    status: Literal["deleted"]
+
+
 def _base_fields(document: Document) -> dict:
     return {
         "document_id": document.id,
         "external_document_id": document.external_document_id,
+        "citation_prefix": document.citation_prefix,
         "title": document.title,
         "filename": document.filename,
         "country": document.country,
@@ -60,4 +67,4 @@ def to_document_response(document: Document) -> DocumentResponse:
 
 
 def to_document_list_item(document: Document) -> DocumentListItem:
-    return DocumentListItem(**_base_fields(document), technology_type=document.technology_type)
+    return DocumentListItem(**_base_fields(document))

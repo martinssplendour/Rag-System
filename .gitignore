@@ -16,3 +16,11 @@ frontend/.env.local
 **/__pycache__/
 **/*.pyc
 *.tsbuildinfo
+
+# Local brief/source artifacts and candidate pack files
+BUILD_SPEC_PART1_INGESTION.md
+BUILD_SPEC_PART2_RETRIEVAL_AND_ANSWER.md
+MARKET_ACCESS_EVIDENCE_ASSISTANT_BUILD_SPEC.md
+Lead AI Engineer Technical Test.pdf
+kintiga_market_access_candidate_dataset.zip
+senior-project-pack/

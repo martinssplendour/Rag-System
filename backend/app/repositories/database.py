@@ -9,6 +9,7 @@ modularity checklist, section 10.
 
 from __future__ import annotations
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -44,3 +45,15 @@ def build_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
 async def create_all(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text("alter table documents add column if not exists citation_prefix varchar(64)")
+        )
+        await conn.execute(
+            text(
+                """
+                create unique index if not exists uq_documents_workspace_citation_prefix
+                on documents (workspace_id, citation_prefix)
+                where citation_prefix is not null
+                """
+            )
+        )

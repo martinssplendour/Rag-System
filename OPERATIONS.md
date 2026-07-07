@@ -42,6 +42,11 @@ failure, the document is marked `failed`.
 Partial chunks and vectors are deleted after failed attempts so a bad ingestion does not leave stale
 search results behind.
 
+Document deletion is also failure-tolerant. The request marks the document `deleted` first, so users
+stop seeing it immediately. Cleanup of Chroma vectors, chunks, ingestion jobs, stored files, and
+retrieval caches then runs as a background task. Cleanup failures are logged by cleanup area and do
+not expose stack traces to the browser.
+
 ## Observability
 
 Logs include request IDs, routes, status codes, latency, ingestion job IDs, document IDs, attempt
@@ -55,5 +60,7 @@ Important events include:
 - `ingestion_job_retrying`
 - `ingestion_job_succeeded`
 - `ingestion_job_failed_final`
+- `document_soft_deleted`
+- `document_cleanup_finished`
 
 User-facing errors use a safe envelope with a request ID. Stack traces stay server-side.

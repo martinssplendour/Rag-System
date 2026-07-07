@@ -22,13 +22,13 @@ def test_system_prompt_loads_from_versioned_markdown_file() -> None:
 def test_repair_prompt_loads_instruction_from_versioned_markdown_file() -> None:
     prompt = build_repair_prompt(
         question="What evidence exists?",
-        context='<evidence source_id="S1">Alpha</evidence>',
-        invalid_labels=["S9"],
+        context='<evidence source_id="UK-NICE-001">Alpha</evidence>',
+        invalid_labels=["UK-NICE-999"],
         prompt_version="1.0.0",
     )
 
     assert load_repair_instruction("1.0.0") in prompt
-    assert "Invalid labels from previous answer: S9" in prompt
+    assert "Invalid labels from previous answer: UK-NICE-999" in prompt
 
 
 def test_unknown_prompt_version_refuses_to_start() -> None:

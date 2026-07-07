@@ -39,6 +39,8 @@ class AnswerRepository(Protocol):
         latency_ms: int,
     ) -> SavedAnswer: ...
 
+    async def delete_sources_by_document(self, workspace_id: str, document_id: str) -> None: ...
+
 
 class PostgresAnswerRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -150,6 +152,23 @@ class PostgresAnswerRepository:
         await self._save_sources(answer_id, response.sources)
         await self.session.commit()
         return SavedAnswer(question_id=question_id, answer_id=answer_id)
+
+    async def delete_sources_by_document(self, workspace_id: str, document_id: str) -> None:
+        await self.ensure_tables()
+        await self.session.execute(
+            text(
+                """
+                delete from answer_sources
+                where chunk_id in (
+                    select id from document_chunks
+                    where workspace_id = :workspace_id
+                    and document_id = :document_id
+                )
+                """
+            ),
+            {"workspace_id": workspace_id, "document_id": document_id},
+        )
+        await self.session.flush()
 
     async def _save_sources(self, answer_id: str, sources: list[AnswerSource]) -> None:
         for index, source in enumerate(sources, start=1):

@@ -6,7 +6,8 @@ files (see BUILD_SPEC_PART1_INGESTION.md section 2 and the chunking.py
 module docstring).
 """
 
-from app.rag.chunking import ChunkDraft, chunk_document, split_into_sections
+from app.rag.chunking import ChunkDraft, chunk_document, chunk_structured_table, split_into_sections
+from app.rag.tables import StructuredTable
 
 
 def test_split_into_sections_groups_multi_paragraph_body_under_one_heading():
@@ -117,6 +118,32 @@ def test_chunk_document_preserves_page_number_for_pdf_pages():
         "test-doc", "Executive summary\nSome content.\n", chunk_size=1000, chunk_overlap=150, page_number=3
     )
     assert all(d.page_number == 3 for d in drafts)
+
+
+def test_chunk_structured_table_creates_whole_table_and_row_chunks():
+    table = StructuredTable(
+        page_number=1,
+        table_index=1,
+        title="Evidence and Access Table",
+        headers=["Domain", "Submitted evidence", "Assessment concern", "Retrieval signal"],
+        rows=[
+            {
+                "Domain": "Data governance",
+                "Submitted evidence": "EEA hosting and role-based access",
+                "Assessment concern": "Retention needed clarification",
+                "Retrieval signal": "privacy concern",
+            }
+        ],
+        bounding_box=(1.0, 2.0, 3.0, 4.0),
+    )
+
+    drafts = chunk_structured_table("france.pdf", table, table_id="france-p1-t1")
+
+    assert [draft.metadata["chunk_type"] for draft in drafts] == ["table", "table_row"]
+    assert drafts[1].metadata["table_id"] == "france-p1-t1"
+    assert drafts[1].metadata["row_index"] == 1
+    assert "Domain: Data governance." in drafts[1].content
+    assert "Retrieval signal: privacy concern." in drafts[1].content
 
 
 def test_chunk_draft_is_a_frozen_dataclass():

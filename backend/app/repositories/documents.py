@@ -10,6 +10,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.constants import STATUS_DELETED
 from app.repositories.models import Document
 
 _MERGEABLE_FIELDS = (
@@ -29,7 +30,9 @@ class DocumentRepository:
 
     async def get_by_hash(self, workspace_id: str, content_hash: str) -> Document | None:
         stmt = select(Document).where(
-            Document.workspace_id == workspace_id, Document.content_hash == content_hash
+            Document.workspace_id == workspace_id,
+            Document.content_hash == content_hash,
+            Document.status != STATUS_DELETED,
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
 
@@ -37,6 +40,10 @@ class DocumentRepository:
         self._session.add(document)
         await self._session.flush()
         return document
+
+    async def list_for_citation_prefix_allocation(self, workspace_id: str) -> list[Document]:
+        stmt = select(Document).where(Document.workspace_id == workspace_id)
+        return list((await self._session.execute(stmt)).scalars().all())
 
     async def update_status(
         self,
@@ -69,7 +76,11 @@ class DocumentRepository:
         await self._session.flush()
 
     async def list_all(self, workspace_id: str) -> list[Document]:
-        stmt = select(Document).where(Document.workspace_id == workspace_id).order_by(Document.created_at)
+        stmt = (
+            select(Document)
+            .where(Document.workspace_id == workspace_id, Document.status != STATUS_DELETED)
+            .order_by(Document.created_at)
+        )
         return list((await self._session.execute(stmt)).scalars().all())
 
     async def get(self, workspace_id: str, document_id: str) -> Document | None:

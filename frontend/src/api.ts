@@ -2,6 +2,7 @@ import type {
   ApiErrorEnvelope,
   AskPayload,
   AskResponse,
+  DocumentDeleteResponse,
   DocumentListResponse,
   DocumentItem,
   TokenResponse,
@@ -87,6 +88,19 @@ export async function uploadDocument(token: string, formData: FormData): Promise
     {
       method: "POST",
       body: formData,
+    },
+    token,
+  );
+}
+
+export async function deleteDocument(
+  token: string,
+  documentId: string,
+): Promise<DocumentDeleteResponse> {
+  return requestJson<DocumentDeleteResponse>(
+    `/documents/${documentId}`,
+    {
+      method: "DELETE",
     },
     token,
   );

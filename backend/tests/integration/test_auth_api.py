@@ -173,6 +173,19 @@ async def test_non_admin_cannot_upload_documents(jwt_client: AsyncClient):
     assert response.json()["error"]["code"] == "ADMIN_REQUIRED"
 
 
+async def test_non_admin_cannot_delete_documents(jwt_client: AsyncClient):
+    register = await jwt_client.post(
+        "/auth/register", json={"email": "delete-reader@example.com", "password": "correct-password"}
+    )
+    token = register.json()["access_token"]
+    response = await jwt_client.delete(
+        "/documents/not-a-real-document",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "ADMIN_REQUIRED"
+
+
 async def test_configured_admin_can_upload_documents(jwt_client: AsyncClient):
     register = await jwt_client.post(
         "/auth/register", json={"email": "upload-admin@example.com", "password": "correct-password"}
@@ -185,6 +198,31 @@ async def test_configured_admin_can_upload_documents(jwt_client: AsyncClient):
     )
     assert response.status_code == 202
     assert response.json()["filename"] == "admin_doc.txt"
+
+
+async def test_configured_admin_can_delete_own_document(jwt_client: AsyncClient):
+    register = await jwt_client.post(
+        "/auth/register", json={"email": "upload-admin@example.com", "password": "correct-password"}
+    )
+    token = register.json()["access_token"]
+    upload = await jwt_client.post(
+        "/documents",
+        files={"file": ("delete_admin_doc.txt", b"Admin can delete evidence.", "text/plain")},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert upload.status_code == 202
+    document_id = upload.json()["document_id"]
+
+    delete_response = await jwt_client.delete(
+        f"/documents/{document_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert delete_response.status_code == 202
+    assert delete_response.json() == {"document_id": document_id, "status": "deleted"}
+
+    list_response = await jwt_client.get("/documents", headers={"Authorization": f"Bearer {token}"})
+    assert list_response.status_code == 200
+    assert list_response.json() == {"items": [], "total": 0}
 
 
 async def test_two_users_documents_do_not_collide(jwt_client: AsyncClient):

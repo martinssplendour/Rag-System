@@ -54,10 +54,19 @@ row, and returns quickly with the document in `processing` status. The in-proces
 started by FastAPI then performs parsing, chunking, embedding, and Chroma upsert. `GET /documents`
 is the status source of truth.
 
+`DELETE /documents/{document_id}` is admin-only. It marks the document `deleted` first, then
+background cleanup removes Chroma vectors, chunks, ingestion jobs, stored files, and retrieval cache
+entries.
+
 Uploads are checked for size, extension, and actual file content. In JWT mode, uploads are
 admin-only. If background ingestion fails, the worker retries up to `INGESTION_JOB_MAX_ATTEMPTS`
 before marking the document `failed`; stack traces stay in server logs and users only receive safe
 status/error messages.
+
+The upload UI keeps metadata deliberately small: country is selected from a controlled list, and
+language is either selected (`en`, `de`, `fr`, `it`) or left for local auto-detection during
+background ingestion. Internal repository fields still leave room for richer metadata later, but
+the public upload workflow stays focused on the two fields that affect retrieval.
 
 ## Seeding the real dataset
 

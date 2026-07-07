@@ -33,11 +33,19 @@ class User(Base):
 
 class Document(Base):
     __tablename__ = "documents"
-    __table_args__ = (UniqueConstraint("workspace_id", "content_hash", name="uq_documents_workspace_hash"),)
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "content_hash", name="uq_documents_workspace_hash"),
+        UniqueConstraint(
+            "workspace_id",
+            "citation_prefix",
+            name="uq_documents_workspace_citation_prefix",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     external_document_id: Mapped[str | None] = mapped_column(String(255))
+    citation_prefix: Mapped[str | None] = mapped_column(String(64), index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     filename: Mapped[str | None] = mapped_column(String(255))
     country: Mapped[str | None] = mapped_column(String(100))

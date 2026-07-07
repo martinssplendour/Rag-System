@@ -6,12 +6,18 @@ paid API key (see main build spec section 24.5).
 
 from __future__ import annotations
 
+import asyncio
 from io import BytesIO
+from pathlib import Path
+from typing import Any
 
 import fitz
 import pytest
 from docx import Document as DocxDocument
 from httpx import AsyncClient
+from sqlalchemy import text
+
+from app.repositories.database import build_engine
 
 pytestmark = pytest.mark.asyncio
 
@@ -230,6 +236,53 @@ async def test_duplicate_content_is_rejected_with_409(client: AsyncClient):
     assert second.json()["error"]["code"] == "DUPLICATE_DOCUMENT"
 
 
+async def test_admin_delete_soft_deletes_then_cleans_document_data(
+    client: AsyncClient,
+    postgres_database_url: str,
+    wait_for_document_status,
+):
+    content = (
+        b"Document ID: delete_me\nCountry: United Kingdom\n\n"
+        b"Executive summary\nThis evidence should be removed after deletion.\n"
+    )
+    upload = await client.post(
+        "/documents",
+        files={"file": ("delete_me.txt", content, "text/plain")},
+        data={"country": "United Kingdom"},
+    )
+    assert upload.status_code == 202
+    document_id = upload.json()["document_id"]
+    await wait_for_document_status(client, document_id)
+
+    before = await _fetch_document_cleanup_state(postgres_database_url, document_id)
+    assert before["status"] == "ready"
+    assert before["chunk_count"] > 0
+    assert await _count_chunks(postgres_database_url, document_id) > 0
+    storage_path = before["storage_path"]
+    assert storage_path
+    assert Path(str(storage_path)).exists()
+
+    delete_response = await client.delete(f"/documents/{document_id}")
+    assert delete_response.status_code == 202
+    assert delete_response.json() == {"document_id": document_id, "status": "deleted"}
+
+    list_response = await client.get("/documents")
+    assert list_response.status_code == 200
+    assert document_id not in {
+        item["document_id"] for item in list_response.json()["items"]
+    }
+
+    await _wait_for_deleted_cleanup(postgres_database_url, document_id)
+    assert not Path(str(storage_path)).exists()
+
+    reupload = await client.post(
+        "/documents",
+        files={"file": ("delete_me_again.txt", content, "text/plain")},
+        data={"country": "United Kingdom"},
+    )
+    assert reupload.status_code == 202
+
+
 async def test_list_documents_returns_uploaded_documents(client: AsyncClient):
     await client.post(
         "/documents",
@@ -253,3 +306,48 @@ async def test_openapi_docs_are_served(client: AsyncClient):
     assert response.status_code == 200
     assert "/documents" in response.json()["paths"]
     assert "/health" in response.json()["paths"]
+
+
+async def _fetch_document_cleanup_state(database_url: str, document_id: str) -> dict[str, Any]:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text(
+                    """
+                    select status, chunk_count, storage_path, content_hash
+                    from documents
+                    where id = :document_id
+                    """
+                ),
+                {"document_id": document_id},
+            )
+            row = result.mappings().one()
+            return dict(row)
+    finally:
+        await engine.dispose()
+
+
+async def _count_chunks(database_url: str, document_id: str) -> int:
+    engine = build_engine(database_url)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                text("select count(*) from document_chunks where document_id = :document_id"),
+                {"document_id": document_id},
+            )
+            return int(result.scalar_one() or 0)
+    finally:
+        await engine.dispose()
+
+
+async def _wait_for_deleted_cleanup(database_url: str, document_id: str) -> None:
+    for _ in range(40):
+        state = await _fetch_document_cleanup_state(database_url, document_id)
+        chunks = await _count_chunks(database_url, document_id)
+        if state["status"] == "deleted" and state["storage_path"] is None and chunks == 0:
+            return
+        await asyncio.sleep(0.05)
+    state = await _fetch_document_cleanup_state(database_url, document_id)
+    chunks = await _count_chunks(database_url, document_id)
+    raise AssertionError(f"cleanup did not finish; state={state!r} chunks={chunks}")

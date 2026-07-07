@@ -1,16 +1,33 @@
 import {
   AlertCircle,
+  BookOpen,
   Bot,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
   CheckCircle2,
   Clipboard,
+  CircleHelp,
+  Eye,
+  EyeOff,
   FileText,
   FolderOpen,
+  Globe2,
+  Landmark,
+  LockKeyhole,
   LogOut,
   MessageSquareText,
+  Paperclip,
+  Plus,
   RefreshCw,
+  Scale,
   Search,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+  Type,
   Upload,
   UploadCloud,
   User,
@@ -20,6 +37,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ApiError,
   askQuestion,
+  deleteDocument,
   listDocuments,
   login,
   register,
@@ -40,6 +58,16 @@ const SESSION_STORAGE_KEY = "kintiga.auth.session";
 type View = "chat" | "upload" | "documents";
 type AuthMode = "login" | "register";
 type UploadMode = "file" | "text";
+
+const COUNTRY_OPTIONS = ["United Kingdom", "France", "Germany", "Italy"];
+
+const LANGUAGE_OPTIONS = [
+  { label: "Auto detect", value: "auto" },
+  { label: "English", value: "en" },
+  { label: "German", value: "de" },
+  { label: "French", value: "fr" },
+  { label: "Italian", value: "it" },
+];
 
 type ChatMessage =
   | { id: string; role: "user"; content: string }
@@ -93,6 +121,7 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessio
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -137,8 +166,10 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessio
   return (
     <main className="auth-page">
       <section className="auth-panel" aria-labelledby="auth-title">
-        <div className="brand-mark" aria-hidden="true">
-          <ShieldCheck size={30} />
+        <div className="auth-brand-mark" aria-hidden="true">
+          <div className="brand-mark">
+            K
+          </div>
         </div>
         <h1 id="auth-title">Kintiga Evidence Assistant</h1>
         <p className="auth-subtitle">Secure market-access evidence workbench</p>
@@ -173,30 +204,68 @@ function AuthScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSessio
         <form className="auth-form" onSubmit={handleSubmit}>
           <label>
             Email
-            <input
-              autoComplete="email"
-              inputMode="email"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="analyst@example.com"
-            />
+            <span className="input-with-icon">
+              <User size={18} aria-hidden="true" />
+              <input
+                autoComplete="email"
+                inputMode="email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="analyst@example.com"
+              />
+            </span>
           </label>
           <label>
             Password
-            <input
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={mode === "login" ? "Your password" : "At least 8 characters"}
-            />
+            <span className="input-with-icon password-field">
+              <LockKeyhole size={18} aria-hidden="true" />
+              <input
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={mode === "login" ? "Your password" : "At least 8 characters"}
+              />
+              <button
+                className="password-toggle"
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((current) => !current)}
+              >
+                {showPassword ? (
+                  <EyeOff size={18} aria-hidden="true" />
+                ) : (
+                  <Eye size={18} aria-hidden="true" />
+                )}
+              </button>
+            </span>
           </label>
+          {mode === "login" ? (
+            <button
+              className="link-button forgot-password"
+              type="button"
+              onClick={() => setError("Password reset is not available in this demo.")}
+            >
+              Forgot password?
+            </button>
+          ) : null}
           {error ? <InlineAlert tone="error" message={error} /> : null}
           <button className="primary-button full-width" type="submit" disabled={isSubmitting}>
             <ShieldCheck size={18} aria-hidden="true" />
             {isSubmitting ? "Working..." : submitLabel}
           </button>
+          <div className="auth-divider">
+            <span>or</span>
+          </div>
+          <button className="icon-text-button full-width sso-button" type="button" disabled>
+            <Landmark size={18} aria-hidden="true" />
+            Continue with SSO
+          </button>
+          <p className="auth-security-note">
+            <ShieldCheck size={18} aria-hidden="true" />
+            Your data is encrypted and securely protected
+          </p>
         </form>
       </section>
     </main>
@@ -253,7 +322,7 @@ function Workspace({ session, onLogout }: { session: AuthSession; onLogout: () =
       <aside className="sidebar" aria-label="Primary navigation">
         <div className="sidebar-brand">
           <div className="brand-mark small" aria-hidden="true">
-            <ShieldCheck size={22} />
+            K
           </div>
           <div>
             <strong>Kintiga</strong>
@@ -289,14 +358,15 @@ function Workspace({ session, onLogout }: { session: AuthSession; onLogout: () =
           <Metric label="Total" value={documents.length} tone="neutral" />
           <Metric label="Failed" value={failedCount} tone="danger" />
         </div>
+
+        <div className="sidebar-footer" aria-hidden="true">
+          <ChevronsLeft size={19} />
+        </div>
       </aside>
 
       <div className="workspace">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Market access evidence workspace</p>
-            <h2>{viewTitle(view)}</h2>
-          </div>
+          <p className="topbar-title">Market Access Evidence Workspace</p>
           <div className="account-strip">
             <div className="account-meta">
               <User size={16} aria-hidden="true" />
@@ -313,6 +383,7 @@ function Workspace({ session, onLogout }: { session: AuthSession; onLogout: () =
         </header>
 
         <main className="workspace-content">
+          <PageIntro view={view} />
           {view === "chat" ? (
             <EvidenceChat
               documents={documents}
@@ -345,11 +416,23 @@ function Workspace({ session, onLogout }: { session: AuthSession; onLogout: () =
               documents={documents}
               error={documentError}
               isLoading={isLoadingDocuments}
+              isAdmin={session.isAdmin}
+              token={session.accessToken}
               onRefresh={refreshDocuments}
+              onAuthExpired={onLogout}
             />
           ) : null}
         </main>
       </div>
+    </div>
+  );
+}
+
+function PageIntro({ view }: { view: View }) {
+  return (
+    <div className="page-intro">
+      <p className="eyebrow">Market access evidence workspace</p>
+      <h1>{viewTitle(view)}</h1>
     </div>
   );
 }
@@ -369,14 +452,20 @@ function UploadEvidence({
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [country, setCountry] = useState("");
-  const [countryCode, setCountryCode] = useState("");
-  const [language, setLanguage] = useState("");
-  const [therapyArea, setTherapyArea] = useState("");
-  const [technologyType, setTechnologyType] = useState("");
-  const [assessmentBody, setAssessmentBody] = useState("");
+  const [language, setLanguage] = useState("auto");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function handleClear() {
+    setFile(null);
+    setTitle("");
+    setText("");
+    setCountry("");
+    setLanguage("auto");
+    setError(null);
+    setSuccess(null);
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -391,6 +480,11 @@ function UploadEvidence({
       setError("Direct text requires a title and evidence text.");
       return;
     }
+    const selectedCountry = COUNTRY_OPTIONS.find((option) => option === country);
+    if (!selectedCountry) {
+      setError("Select the document country.");
+      return;
+    }
 
     const formData = new FormData();
     if (mode === "file" && file) {
@@ -400,20 +494,20 @@ function UploadEvidence({
       formData.append("title", title.trim());
       formData.append("text", text.trim());
     }
-    appendIfPresent(formData, "country", country);
-    appendIfPresent(formData, "country_code", countryCode);
-    appendIfPresent(formData, "language", language);
-    appendIfPresent(formData, "therapy_area", therapyArea);
-    appendIfPresent(formData, "technology_type", technologyType);
-    appendIfPresent(formData, "assessment_body", assessmentBody);
+    formData.append("country", selectedCountry);
+    if (language !== "auto") {
+      formData.append("language", language);
+    }
 
     setIsSubmitting(true);
     try {
       const uploaded = await uploadDocument(token, formData);
-      setSuccess(`${uploaded.title} accepted for background processing.`);
+      setSuccess(`${uploaded.title} uploaded successfully. It will appear in the library when ready.`);
       setFile(null);
       setTitle("");
       setText("");
+      setCountry("");
+      setLanguage("auto");
       await onUploaded();
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -441,13 +535,12 @@ function UploadEvidence({
   }
 
   return (
-    <section className="panel upload-grid" aria-labelledby="upload-title">
-      <div className="panel-heading">
+    <section className="panel upload-panel" aria-labelledby="upload-title">
+      <div className="panel-heading upload-heading">
         <div>
           <p className="eyebrow">Ingestion</p>
           <h3 id="upload-title">Upload evidence</h3>
         </div>
-        <StatusBadge status="processing" label="Async indexing" />
       </div>
 
       <form className="upload-form" onSubmit={handleSubmit}>
@@ -459,6 +552,7 @@ function UploadEvidence({
             className={mode === "file" ? "active" : ""}
             onClick={() => setMode("file")}
           >
+            <FileText size={17} aria-hidden="true" />
             File
           </button>
           <button
@@ -468,6 +562,7 @@ function UploadEvidence({
             className={mode === "text" ? "active" : ""}
             onClick={() => setMode("text")}
           >
+            <Type size={17} aria-hidden="true" />
             Direct text
           </button>
         </div>
@@ -486,9 +581,16 @@ function UploadEvidence({
               handleFileCandidate(event.dataTransfer.files[0]);
             }}
           >
-            <UploadCloud size={28} aria-hidden="true" />
+            <span className="drop-zone-icon" aria-hidden="true">
+              <UploadCloud size={30} />
+            </span>
             <span>{file ? file.name : "Drop a PDF, TXT, or DOCX file"}</span>
-            <small>{file ? formatBytes(file.size) : "or choose a file from disk"}</small>
+            <small>{file ? formatBytes(file.size) : "or browse from your device"}</small>
+            {!file ? <em>Supported: PDF, TXT, DOCX · Max 10 MB</em> : null}
+            <span className="choose-file-button">
+              <FolderOpen size={18} aria-hidden="true" />
+              Choose file
+            </span>
             <input
               type="file"
               accept=".pdf,.txt,.docx,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -496,7 +598,7 @@ function UploadEvidence({
             />
           </label>
         ) : (
-          <div className="field-stack">
+          <div className="field-stack direct-text-panel">
             <label>
               Title
               <input
@@ -517,44 +619,42 @@ function UploadEvidence({
           </div>
         )}
 
+        <div className="upload-assurance" aria-label="Upload safeguards">
+          <span>
+            <ShieldCheck size={18} aria-hidden="true" />
+            Files are securely processed for evidence retrieval.
+          </span>
+          <span>
+            <Globe2 size={18} aria-hidden="true" />
+            Automatic language detection
+          </span>
+          <span>
+            <Sparkles size={18} aria-hidden="true" />
+            Source-ready evidence
+          </span>
+        </div>
+
         <div className="metadata-grid">
           <label>
             Country
-            <input value={country} onChange={(event) => setCountry(event.target.value)} />
-          </label>
-          <label>
-            Code
-            <input
-              value={countryCode}
-              onChange={(event) => setCountryCode(event.target.value)}
-              placeholder="UK"
-            />
+            <select value={country} onChange={(event) => setCountry(event.target.value)}>
+              <option value="">Select country</option>
+              {COUNTRY_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Language
-            <input
-              value={language}
-              onChange={(event) => setLanguage(event.target.value)}
-              placeholder="en"
-            />
-          </label>
-          <label>
-            Therapy area
-            <input value={therapyArea} onChange={(event) => setTherapyArea(event.target.value)} />
-          </label>
-          <label>
-            Technology type
-            <input
-              value={technologyType}
-              onChange={(event) => setTechnologyType(event.target.value)}
-            />
-          </label>
-          <label>
-            Assessment body
-            <input
-              value={assessmentBody}
-              onChange={(event) => setAssessmentBody(event.target.value)}
-            />
+            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+              {LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 
@@ -562,6 +662,9 @@ function UploadEvidence({
         {success ? <InlineAlert tone="success" message={success} /> : null}
 
         <div className="form-actions">
+          <button className="icon-text-button" type="button" onClick={handleClear}>
+            Clear
+          </button>
           <button className="primary-button" type="submit" disabled={isSubmitting}>
             <Upload size={18} aria-hidden="true" />
             {isSubmitting ? "Uploading..." : "Upload evidence"}
@@ -576,16 +679,24 @@ function DocumentLibrary({
   documents,
   isLoading,
   error,
+  isAdmin,
+  token,
   onRefresh,
+  onAuthExpired,
 }: {
   documents: DocumentItem[];
   isLoading: boolean;
   error: string | null;
+  isAdmin: boolean;
+  token: string;
   onRefresh: () => Promise<void>;
+  onAuthExpired: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("all");
   const [status, setStatus] = useState<DocumentStatus | "all">("all");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
 
   const countries = useMemo(() => {
     return [...new Set(documents.map((document) => document.country).filter(Boolean))]
@@ -605,8 +716,33 @@ function DocumentLibrary({
     });
   }, [country, documents, query, status]);
 
+  const visibleCount = filteredDocuments.length;
+  const totalCount = documents.length;
+
+  async function handleDelete(document: DocumentItem) {
+    const confirmed = window.confirm(`Delete "${document.title}" from this workspace?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteError(null);
+    setDeletingDocumentId(document.document_id);
+    try {
+      await deleteDocument(token, document.document_id);
+      await onRefresh();
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 401) {
+        onAuthExpired();
+        return;
+      }
+      setDeleteError(errorMessage(caught));
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  }
+
   return (
-    <section className="panel" aria-labelledby="documents-title">
+    <section className="panel library-panel" aria-labelledby="documents-title">
       <div className="panel-heading library-heading">
         <div>
           <p className="eyebrow">Evidence library</p>
@@ -618,10 +754,11 @@ function DocumentLibrary({
         </button>
       </div>
 
-      <div className="toolbar">
+      <div className="toolbar library-toolbar">
         <label className="search-field">
           <Search size={17} aria-hidden="true" />
           <input
+            aria-label="Search documents"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search title or filename"
@@ -653,6 +790,7 @@ function DocumentLibrary({
       </div>
 
       {error ? <InlineAlert tone="error" message={error} /> : null}
+      {deleteError ? <InlineAlert tone="error" message={deleteError} /> : null}
       {isLoading ? <LoadingRows /> : null}
       {!isLoading && filteredDocuments.length === 0 ? (
         <EmptyState
@@ -662,42 +800,77 @@ function DocumentLibrary({
         />
       ) : null}
       {!isLoading && filteredDocuments.length > 0 ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Document</th>
-                <th>Country</th>
-                <th>Language</th>
-                <th>Status</th>
-                <th>Chunks</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredDocuments.map((document) => (
-                <tr key={document.document_id}>
-                  <td>
-                    <div className="document-cell">
-                      <FileText size={18} aria-hidden="true" />
-                      <div>
-                        <strong>{document.title}</strong>
-                        <span>{document.filename ?? document.external_document_id}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td>{document.country ?? "Unknown"}</td>
-                  <td>{document.language}</td>
-                  <td>
-                    <StatusBadge status={document.status} />
-                  </td>
-                  <td>{document.chunk_count}</td>
-                  <td>{formatDate(document.created_at)}</td>
+        <>
+          <div className="table-wrap library-table-wrap">
+            <table className="library-table">
+              <thead>
+                <tr>
+                  <th>Document</th>
+                  <th>Country</th>
+                  <th>Language</th>
+                  <th>Status</th>
+                  <th>Chunks</th>
+                  <th>Created</th>
+                  {isAdmin ? <th>Actions</th> : null}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredDocuments.map((document) => (
+                  <tr key={document.document_id}>
+                    <td>
+                      <div className="document-cell">
+                        <FileText size={18} aria-hidden="true" />
+                        <div>
+                          <strong>{document.title}</strong>
+                          <span>{document.filename ?? document.external_document_id}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{document.country ?? "Unknown"}</td>
+                    <td>{document.language}</td>
+                    <td>
+                      <StatusBadge status={document.status} />
+                    </td>
+                    <td>{document.chunk_count}</td>
+                    <td>{formatDate(document.created_at)}</td>
+                    {isAdmin ? (
+                      <td>
+                        <button
+                          className="icon-text-button danger-action"
+                          type="button"
+                          onClick={() => void handleDelete(document)}
+                          disabled={deletingDocumentId === document.document_id}
+                          title="Delete document"
+                        >
+                          <Trash2 size={16} aria-hidden="true" />
+                          {deletingDocumentId === document.document_id ? "Deleting..." : "Delete"}
+                        </button>
+                      </td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="library-footer">
+            <span>
+              Showing 1 to {visibleCount} of {totalCount} documents
+            </span>
+            <div className="pagination-controls" aria-label="Document pagination">
+              <button className="icon-button pagination-button" type="button" disabled>
+                <ChevronLeft size={18} aria-hidden="true" />
+                <span className="sr-only">Previous page</span>
+              </button>
+              <button className="pagination-page active" type="button" aria-current="page">
+                1
+              </button>
+              <button className="icon-button pagination-button" type="button" disabled>
+                <ChevronRight size={18} aria-hidden="true" />
+                <span className="sr-only">Next page</span>
+              </button>
+            </div>
+          </div>
+        </>
       ) : null}
     </section>
   );
@@ -716,13 +889,27 @@ function EvidenceChat({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState("");
-  const [country, setCountry] = useState("");
+  const [country, setCountry] = useState("United Kingdom");
   const [documentId, setDocumentId] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const readyDocuments = documents.filter((document) => document.status === "ready");
   const canSubmit = question.trim().length >= 3 && !isSubmitting;
+  const suggestionPrompts = [
+    {
+      icon: <Sparkles size={22} aria-hidden="true" />,
+      label: "Summarise the evidence base",
+    },
+    {
+      icon: <CircleHelp size={22} aria-hidden="true" />,
+      label: "What are the main reimbursement barriers in the UK?",
+    },
+    {
+      icon: <Scale size={22} aria-hidden="true" />,
+      label: "Compare recommendations across uploaded documents",
+    },
+  ];
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -755,23 +942,77 @@ function EvidenceChat({
   }
 
   return (
-    <section className="chat-layout" aria-labelledby="chat-title">
-      <div className="chat-main panel">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Grounded Q&A</p>
-            <h3 id="chat-title">Evidence chat</h3>
-          </div>
-          <ConfidenceLegend />
+    <section className="chat-page" aria-labelledby="chat-title">
+      <div className="chat-scope-toolbar" aria-label="Ask filters">
+        <label className="scope-control">
+          <Globe2 size={19} aria-hidden="true" />
+          <select value={country} onChange={(event) => setCountry(event.target.value)}>
+            <option value="">All countries</option>
+            {COUNTRY_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="scope-control readonly">
+          <FileText size={19} aria-hidden="true" />
+          <span>{readyDocuments.length} ready documents</span>
         </div>
+        <label className="scope-control document-scope">
+          <BookOpen size={19} aria-hidden="true" />
+          <select
+            value={documentId}
+            disabled={isLoadingDocuments}
+            onChange={(event) => setDocumentId(event.target.value)}
+          >
+            <option value="all">All ready documents</option>
+            {readyDocuments.map((document) => (
+              <option key={document.document_id} value={document.document_id}>
+                {document.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="icon-text-button"
+          type="button"
+          onClick={() => {
+            setCountry("");
+            setDocumentId("all");
+          }}
+        >
+          <SlidersHorizontal size={18} aria-hidden="true" />
+          Filters
+        </button>
+      </div>
 
+      <div className="chat-main panel">
         <div className="message-stream" aria-live="polite">
           {messages.length === 0 ? (
-            <EmptyState
-              icon={<Bot size={30} />}
-              title="Ask from uploaded evidence"
-              detail="Answers will include confidence, limitations, and source snippets."
-            />
+            <div className="chat-empty-state">
+              <div className="chat-empty-icon" aria-hidden="true">
+                <MessageSquareText size={34} />
+              </div>
+              <h3 id="chat-title">Ask from uploaded evidence</h3>
+              <p>Answers include confidence, limitations, and source snippets.</p>
+              <div className="chat-separator" aria-hidden="true">
+                <Sparkles size={16} />
+              </div>
+              <div className="suggestion-grid">
+                {suggestionPrompts.map((suggestion) => (
+                  <button
+                    key={suggestion.label}
+                    className="suggestion-card"
+                    type="button"
+                    onClick={() => setQuestion(suggestion.label)}
+                  >
+                    <span>{suggestion.icon}</span>
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           ) : null}
           {messages.map((message) =>
             message.role === "user" ? (
@@ -798,62 +1039,50 @@ function EvidenceChat({
         {error ? <InlineAlert tone="error" message={error} /> : null}
 
         <form className="ask-form" onSubmit={handleSubmit}>
-          <textarea
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="Ask a market-access question"
-            rows={3}
-          />
-          <div className="ask-actions">
-            <button className="primary-button" type="submit" disabled={!canSubmit}>
-              <Send size={18} aria-hidden="true" />
-              {isSubmitting ? "Asking..." : "Ask"}
-            </button>
+          <div className="ask-input-shell">
+            <textarea
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              onPaste={(event) => {
+                event.preventDefault();
+                const pasted = normalisePastedQuestionText(event.clipboardData.getData("text"));
+                const target = event.currentTarget;
+                const start = target.selectionStart;
+                const end = target.selectionEnd;
+                setQuestion((current) => `${current.slice(0, start)}${pasted}${current.slice(end)}`);
+              }}
+              placeholder="Ask a market-access question"
+              rows={2}
+            />
+            <div className="ask-tool-row">
+              <div className="ask-tool-group">
+                <button className="icon-button" type="button" disabled aria-label="Add evidence">
+                  <Plus size={19} aria-hidden="true" />
+                </button>
+                <button className="icon-button" type="button" disabled aria-label="Attach file">
+                  <Paperclip size={18} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="ask-tool-group">
+                <button className="icon-button" type="button" disabled aria-label="Source guide">
+                  <BookOpen size={18} aria-hidden="true" />
+                </button>
+                <button className="primary-button" type="submit" disabled={!canSubmit}>
+                  <Send size={18} aria-hidden="true" />
+                  {isSubmitting ? "Asking..." : "Ask"}
+                </button>
+              </div>
+            </div>
           </div>
         </form>
       </div>
-
-      <aside className="chat-filters panel" aria-label="Ask filters">
-        <div className="panel-heading compact-heading">
-          <div>
-            <p className="eyebrow">Filters</p>
-            <h3>Scope</h3>
-          </div>
-        </div>
-        <label>
-          Country
-          <input
-            value={country}
-            onChange={(event) => setCountry(event.target.value)}
-            placeholder="United Kingdom"
-          />
-        </label>
-        <label>
-          Document
-          <select
-            value={documentId}
-            disabled={isLoadingDocuments}
-            onChange={(event) => setDocumentId(event.target.value)}
-          >
-            <option value="all">All ready documents</option>
-            {readyDocuments.map((document) => (
-              <option key={document.document_id} value={document.document_id}>
-                {document.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="filter-note">
-          <strong>{readyDocuments.length}</strong>
-          <span>ready documents available</span>
-        </div>
-      </aside>
     </section>
   );
 }
 
 function AssistantMessage({ response }: { response: AskResponse }) {
   const [copied, setCopied] = useState(false);
+  const [selectedSource, setSelectedSource] = useState<AnswerSource | null>(null);
 
   async function copyAnswer() {
     await navigator.clipboard.writeText(response.answer);
@@ -873,7 +1102,12 @@ function AssistantMessage({ response }: { response: AskResponse }) {
             <Clipboard size={16} aria-hidden="true" />
           </button>
         </div>
-        <p className="answer-text">{renderAnswer(response.answer, response.sources)}</p>
+        <p className="answer-text">
+          {renderAnswer(response.answer, response.sources, setSelectedSource)}
+        </p>
+        {response.sources.length > 0 ? (
+          <SourceReferenceChips sources={response.sources} onSelect={setSelectedSource} />
+        ) : null}
         {response.uncertainty ? (
           <div className="uncertainty">
             <AlertCircle size={16} aria-hidden="true" />
@@ -881,34 +1115,80 @@ function AssistantMessage({ response }: { response: AskResponse }) {
           </div>
         ) : null}
         <p className="limitations">{response.limitations}</p>
-        {response.sources.length > 0 ? <SourceList sources={response.sources} /> : null}
         {copied ? <span className="copy-confirmation">Copied</span> : null}
       </div>
+      {selectedSource ? (
+        <SourceEvidenceDialog source={selectedSource} onClose={() => setSelectedSource(null)} />
+      ) : null}
     </article>
   );
 }
 
-function SourceList({ sources }: { sources: AnswerSource[] }) {
+function SourceReferenceChips({
+  sources,
+  onSelect,
+}: {
+  sources: AnswerSource[];
+  onSelect: (source: AnswerSource) => void;
+}) {
   return (
-    <div className="source-list" aria-label="Answer sources">
+    <div className="source-chip-row" aria-label="Answer references">
+      <span>References</span>
       {sources.map((source) => (
-        <div className="source-row" key={`${source.document_id}-${source.source_id}`}>
-          <div className="source-label">{source.source_id}</div>
-          <div>
-            <div className="source-title">
-              <strong>{source.document_title}</strong>
-              <span>{formatScore(source.relevance_score)}</span>
-            </div>
-            <p>{source.snippet}</p>
-            <div className="source-meta">
-              <span>{source.country ?? "Unknown country"}</span>
-              <span>{source.language ?? "Unknown language"}</span>
-              {source.page_number && source.page_number > 0 ? <span>Page {source.page_number}</span> : null}
-              {source.section_title ? <span>{source.section_title}</span> : null}
-            </div>
-          </div>
-        </div>
+        <button
+          className="source-chip"
+          key={`${source.document_id}-${source.source_id}`}
+          type="button"
+          onClick={() => onSelect(source)}
+        >
+          {source.source_id}
+        </button>
       ))}
+    </div>
+  );
+}
+
+function SourceEvidenceDialog({
+  source,
+  onClose,
+}: {
+  source: AnswerSource;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="source-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="source-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="source-dialog-header">
+          <div>
+            <span className="source-dialog-label">{source.source_id}</span>
+            <h3 id="source-dialog-title">{source.document_title}</h3>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close source evidence">
+            <XCircle size={18} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="source-dialog-meta">
+          <span>{formatScore(source.relevance_score)}</span>
+          <span>{source.country ?? "Unknown country"}</span>
+          <span>{source.language ?? "Unknown language"}</span>
+          {source.page_number && source.page_number > 0 ? <span>Page {source.page_number}</span> : null}
+          {source.section_title ? <span>{source.section_title}</span> : null}
+        </div>
+        <div className="source-dialog-body">
+          <p>{source.snippet}</p>
+        </div>
+        <div className="source-dialog-actions">
+          <button className="icon-text-button" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -995,36 +1275,56 @@ function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
   return <span className={`confidence-badge ${confidence}`}>{confidence} confidence</span>;
 }
 
-function ConfidenceLegend() {
-  return (
-    <div className="confidence-legend" aria-label="Confidence scale">
-      <span className="dot high" />
-      <span className="dot medium" />
-      <span className="dot low" />
-    </div>
-  );
-}
-
-function renderAnswer(answer: string, sources: AnswerSource[]) {
-  const knownSources = new Set(sources.map((source) => source.source_id));
-  return answer.split(/(\[S\d+\])/g).map((part, index) => {
-    const sourceId = part.match(/\[(S\d+)\]/)?.[1];
-    if (!sourceId || !knownSources.has(sourceId)) {
+function renderAnswer(
+  answer: string,
+  sources: AnswerSource[],
+  onSourceClick: (source: AnswerSource) => void,
+) {
+  const sourceById = new Map(sources.map((source) => [source.source_id, source]));
+  return answer.split(/(\[[^\]]+\])/g).map((part, index) => {
+    const knownSourceIds = knownSourceIdsInCitation(part, sourceById);
+    if (knownSourceIds.length === 0) {
       return <span key={`${part}-${index}`}>{part}</span>;
     }
     return (
-      <span className="source-token" key={`${sourceId}-${index}`}>
-        {part}
+      <span className="source-token-group" key={`${part}-${index}`}>
+        [
+        {knownSourceIds.map((sourceId, sourceIndex) => {
+          const source = sourceById.get(sourceId);
+          if (!source) {
+            return null;
+          }
+          return (
+            <span key={`${sourceId}-${index}`}>
+              {sourceIndex > 0 ? ", " : null}
+              <button
+                className="source-token"
+                type="button"
+                onClick={() => onSourceClick(source)}
+              >
+                {sourceId}
+              </button>
+            </span>
+          );
+        })}
+        ]
       </span>
     );
   });
 }
 
-function appendIfPresent(formData: FormData, key: string, value: string): void {
-  const trimmed = value.trim();
-  if (trimmed) {
-    formData.append(key, trimmed);
-  }
+function knownSourceIdsInCitation(
+  text: string,
+  sourceById: Map<string, AnswerSource>,
+): string[] {
+  return Array.from(sourceById.keys()).filter((sourceId) => {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9-])${escapeRegExp(sourceId)}([^A-Za-z0-9-]|$)`);
+    return pattern.test(text);
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function errorMessage(caught: unknown): string {
@@ -1079,6 +1379,14 @@ function formatBytes(value: number): string {
     return `${Math.round(value / 1024)} KB`;
   }
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function normalisePastedQuestionText(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/([A-Za-z])%([A-Za-z])/g, "$1ti$2");
 }
 
 function makeId(): string {

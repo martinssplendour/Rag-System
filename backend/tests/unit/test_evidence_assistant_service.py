@@ -39,13 +39,13 @@ async def test_invalid_citation_gets_one_repair_attempt() -> None:
     generator = FakeGenerator(
         [
             GroundedAnswer(
-                answer="Invalid citation [S9]",
-                source_ids=["S9"],
+                answer="Invalid citation [UK-NICE-999]",
+                source_ids=["UK-NICE-999"],
                 evidence_sufficient=True,
             ),
             GroundedAnswer(
-                answer="Valid citation [S1]",
-                source_ids=["S1"],
+                answer="Valid citation [UK-NICE-001]",
+                source_ids=["UK-NICE-001"],
                 evidence_sufficient=True,
             ),
         ]
@@ -67,7 +67,7 @@ async def test_invalid_citation_gets_one_repair_attempt() -> None:
 
     assert generator.calls == 2
     assert response.confidence == "medium"
-    assert [source.source_id for source in response.sources] == ["S1"]
+    assert [source.source_id for source in response.sources] == ["UK-NICE-001"]
 
 
 class Settings:
@@ -166,7 +166,9 @@ def _chunk(chunk_id: str) -> RetrievedChunk:
         raw_text="Overall survival was uncertain.",
         title="UK NICE Oncology Drug Summary",
         country="United Kingdom",
+        country_code="UK",
         language="en",
+        chunk_index=0,
         relevance_score=0.70,
         metadata={"workspace_id": "workspace", "status": "ready"},
     )
