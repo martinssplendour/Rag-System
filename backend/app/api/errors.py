@@ -19,7 +19,7 @@ from starlette.responses import JSONResponse
 from app.domain.errors import ServiceError
 from app.schemas.common import ErrorDetail, ErrorEnvelope
 
-logger = logging.getLogger("market_access_evidence_assistant")
+logger = logging.getLogger("kintiga_evidence_assistant")
 
 
 class AppError(Exception):

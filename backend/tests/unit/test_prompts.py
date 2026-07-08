@@ -15,7 +15,7 @@ from app.rag.prompts import (
 def test_system_prompt_loads_from_versioned_markdown_file() -> None:
     prompt = load_system_prompt("1.0.0")
 
-    assert "Market Access Evidence Assistant" in prompt
+    assert "Kintiga Evidence Assistant" in prompt
     assert "Answer only from the supplied evidence excerpts" in prompt
 
 

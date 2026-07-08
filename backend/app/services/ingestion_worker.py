@@ -24,7 +24,7 @@ from app.services.ingestion_service import DocumentContext, ingest_document
 from app.storage.base import StorageProvider
 from app.vectorstores.base import VectorStore
 
-logger = logging.getLogger("market_access_evidence_assistant")
+logger = logging.getLogger("kintiga_evidence_assistant")
 
 
 class IngestionWorker:

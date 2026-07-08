@@ -32,7 +32,7 @@ from app.vectorstores.base import VectorStore
 # (consistent error envelope) instead of FastAPI's default 403 with a
 # differently-shaped body.
 _bearer_scheme = HTTPBearer(auto_error=False)
-logger = logging.getLogger("market_access_evidence_assistant")
+logger = logging.getLogger("kintiga_evidence_assistant")
 
 
 @dataclass(frozen=True)

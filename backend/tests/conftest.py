@@ -4,7 +4,7 @@ Each DB-backed test gets a fully isolated Postgres database, Chroma dir, temp
 upload dir, and mock embedding provider built through the same create_app()
 factory the real app uses -- no monkeypatching of global state, no shared
 state between tests. See python/fastapi.md testing rules and the
-senior-project-pack modularity checklist (module testability).
+structured engineering checklist (module testability).
 """
 
 from __future__ import annotations

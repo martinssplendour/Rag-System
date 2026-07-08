@@ -1,6 +1,6 @@
-# Market Access Evidence Assistant — Backend
+# Kintiga Evidence Assistant — Backend
 
-FastAPI backend for the Market Access Evidence Assistant. It handles auth, document upload,
+FastAPI backend for the Kintiga Evidence Assistant. It handles auth, document upload,
 background ingestion, retrieval, and grounded answer generation.
 
 ## What this covers
@@ -106,6 +106,27 @@ leaked into indexed content, and that German diacritics survived the pipeline in
 
 Local ignored copies of the dataset and technical brief may live under root `noise/`; copy the zip
 back to the repository root before using `seed_dataset.py`.
+
+## RAG evaluation
+
+From the repository root, `scripts/evaluate_rag.py` runs the quality evaluation through the same
+public `POST /documents` and `POST /ask` paths as the API:
+
+```powershell
+python scripts\evaluate_rag.py --mode live --dataset noise\kintiga_market_access_candidate_dataset.zip
+python scripts\evaluate_rag.py --mode mock --dataset noise\kintiga_market_access_candidate_dataset.zip
+```
+
+The evaluator loads `.env` and `backend/.env`, uses `EVAL_DATABASE_URL`, `DATABASE_URL`, or the
+configured backend database URL, and creates a temporary evaluation database. Chroma and uploads are
+written to temporary local directories for the run.
+
+For the default local database URL on `localhost:5433`, the evaluator starts a temporary local
+PostgreSQL server itself when nothing is listening there. It uses the installed PostgreSQL tools
+(`initdb`, `postgres`, and `pg_ctl` for cleanup), so Docker is not required for the normal evaluator
+path. Use `--no-start-postgres` for an externally managed database, or `--start-postgres` only when
+you explicitly want the bundled Docker Compose Postgres service. Live mode requires `GEMINI_API_KEY`
+or `GOOGLE_API_KEY`.
 
 ## Running tests
 
@@ -213,6 +234,8 @@ later relevant section in country-specific or document-specific answers.
 
 Prompts are versioned Markdown files in `backend/prompts/`, selected by `PROMPT_VERSION`. The app
 loads them at startup and refuses to start if the configured prompt version is not available.
+Loaded prompt templates are cached process-locally. This avoids repeated disk reads, but it is not
+provider-level prompt caching and does not cache LLM responses.
 
 ## Known limitations
 
@@ -243,6 +266,10 @@ loads them at startup and refuses to start if the configured prompt version is n
   text actually sent to the embedding model/LLM (`content` field, which is a rewritten "semantic
   block" for table rows and may include retrieval-only aliases for German text). `/ask` always
   returns `raw_text` as the API `snippet`.
+- **No provider-level prompt caching.** The MVP caches prompt templates locally and tenant-scoped
+  retrieval results, but it does not use provider prompt caching or full answer caching. If
+  added in production, cache keys must include provider, model, prompt version, workspace,
+  document/filter scope, and collection version.
 
 ## Architecture notes
 
@@ -252,10 +279,11 @@ loads them at startup and refuses to start if the configured prompt version is n
 - Upload ingestion is status-driven: request handling creates the document and an `ingestion_jobs`
   row; the worker uses a fresh DB session to process the stored source content outside the HTTP
   request lifecycle.
-- Layered structure (routes → services → repositories/providers) per the senior-project-pack
-  modularity checklist: routes are thin, business logic lives in `services/`, persistence in
-  `repositories/`, third-party integrations (Chroma, OpenAI, PyMuPDF) are wrapped behind
-  `rag/`/`vectorstores/`/`storage/` interfaces rather than imported directly in services.
+- Layered structure (routes → services → repositories/providers) follows a structured engineering
+  checklist for modularity and service boundaries: routes are thin, business logic lives in
+  `services/`, persistence in `repositories/`, and third-party integrations (Chroma, OpenAI,
+  PyMuPDF) are wrapped behind `rag/`/`vectorstores/`/`storage/` interfaces rather than imported
+  directly in services.
 - API-only concerns stay in `api/`: routes translate FastAPI upload objects into domain upload DTOs,
   and `api/errors.py` maps domain/service errors to the public error envelope.
 - `app/domain/` contains service-layer errors and DTOs that are safe for services, scripts, and tests

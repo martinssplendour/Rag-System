@@ -3,7 +3,7 @@
 Owns validation, duplicate detection, original-file storage, and durable
 ingestion-job creation. Route handlers
 (app/api/routes/documents.py) call only this module and stay thin -- see
-the senior-project-pack modularity checklist, layer boundaries.
+the structured engineering checklist and layer boundaries.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 [project]
-name = "market-access-evidence-assistant-backend"
+name = "kintiga-evidence-assistant-backend"
 version = "0.1.0"
-description = "Ingestion backend for the Market Access Evidence Assistant (Part 1)"
+description = "Ingestion backend for the Kintiga Evidence Assistant (Part 1)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",

@@ -3,8 +3,7 @@
 Deliberately exposes plain factory functions rather than a module-level
 singleton engine: tests build their own isolated Postgres database through
 the same functions the app uses, so no test needs to monkeypatch global state
-or spin up the full app to exercise a repository. See senior-project-pack
-modularity checklist, section 10.
+or spin up the full app to exercise a repository.
 """
 
 from __future__ import annotations

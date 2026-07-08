@@ -3,7 +3,7 @@
 Thin controllers: parse/validate transport-level input, delegate entirely
 to document_service, map the ORM result to a response model. No business
 logic, no persistence calls, no third-party SDK details live here -- see
-senior-project-pack modularity checklist, layer boundaries.
+structured engineering checklist and layer boundaries.
 """
 
 from __future__ import annotations

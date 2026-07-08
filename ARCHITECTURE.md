@@ -2,8 +2,9 @@
 
 ## Summary
 
-Market Access Evidence Assistant is a small, production-minded RAG application. The Compose MVP uses
-FastAPI, Postgres, local file storage, Chroma, React, and swappable embedding/LLM providers.
+Kintiga Evidence Assistant is a small, production-minded RAG application. The Compose MVP uses
+FastAPI, Postgres, local file storage, Chroma, React, LangChain, and swappable embedding/LLM
+providers.
 
 ```text
 Browser / React UI
@@ -26,7 +27,8 @@ Local persistence:
 
 ## Code Organization
 
-The implementation is organized to match the senior-project-pack modularity checklist:
+The implementation is organized to match a structured engineering checklist for modularity,
+testability, and maintainable service boundaries:
 
 - The React entry point, `frontend/src/App.tsx`, owns session state and switches between auth and
   workspace screens. Feature UI lives under `frontend/src/features/` (`auth`, `workspace`,
@@ -44,6 +46,9 @@ The implementation is organized to match the senior-project-pack modularity chec
 - Retrieval internals live under `backend/app/rag/retrieval/` (`models`, `chroma`, `lexical`,
   `ranking`, `source_labels`, `utils`). `backend/app/rag/retriever.py` remains as compatibility
   exports for older imports.
+- LangChain is used behind the backend provider abstraction for chat-model orchestration,
+  structured answer generation, and real embedding integrations. The rest of the application talks
+  to local provider protocols rather than importing LangChain directly in routes or services.
 
 ## Sync vs Background Work
 
@@ -140,11 +145,29 @@ public `POST /documents` API, calls `/ask`, and scores:
 The PDF's example answer is used as an answer-concept check for the UK evidence-gaps question. The
 evaluator deliberately avoids an LLM-as-judge in the MVP so results are deterministic and easy to
 explain. Mock mode checks the pipeline offline; live mode uses Gemini and is the stronger answer
-quality check.
+quality check. For local runs, the evaluator loads `.env` and `backend/.env`, uses the configured
+database URL, writes Chroma data to a temporary local directory, and creates a temporary database
+that is dropped after the run. If the default local database on `localhost:5433` is not running, the
+evaluator starts a temporary local PostgreSQL server with the installed PostgreSQL binaries
+(`initdb`, `postgres`, and `pg_ctl` for cleanup). `--no-start-postgres` keeps startup fully external
+for custom database setups, and `--start-postgres` explicitly uses the bundled Docker Compose
+Postgres service.
 
 Latest local verification after the German retrieval-support and ranking changes: live mode passed
 all 10 evaluation cases with a 100% average score, including the English question against the German
 AMNOG document.
+
+## Testing Approach
+
+The backend has unit tests for chunking, preprocessing, provider factories, retrieval ranking,
+citation validation, confidence calculation, auth/security helpers, ingestion retries, and prompt
+loading. Integration tests exercise `/health`, `/documents`, `/ask`, auth flows, workspace
+isolation, answer persistence, and document deletion against Postgres-backed repositories.
+
+The frontend test suite covers authentication state, upload/document workflows, citation rendering,
+source-evidence dialogs, pending answer navigation, and admin-only document deletion. CI runs backend
+lint, backend unit/integration tests, a Postgres startup smoke test, frontend tests, and frontend
+build.
 
 ## Operations
 
@@ -165,9 +188,18 @@ embeddings and chunk IDs, not raw questions or final answers. Entries are short-
 size-limited, so the normal Chroma retrieval path remains the source of truth on cache miss or
 stale cache.
 
+Prompt templates are also cached process-locally after loading from the versioned Markdown prompt
+files. This avoids repeated disk reads, but it does not cache LLM responses or provider prompt
+state.
+
 Full answer caching is intentionally not implemented in the MVP. It is easier to make stale or
 unsafe in a multi-tenant RAG app because answers depend on the tenant's current ready documents,
 retrieval thresholds, model version, prompt version, and citation validation.
+
+Provider-level prompt caching is also not implemented in the MVP. If added later, cache keys must
+include provider, model, prompt version, workspace, document/filter scope, and collection version.
+LLM usage records should also capture whether a provider cache was used so cost and latency analysis
+remain auditable.
 
 ## Frontend Session State
 
@@ -214,4 +246,9 @@ long-lived chat history becomes part of the product.
 3. Move local storage to private object storage.
 4. Add Alembic migrations and managed Postgres backups; evaluate pgvector for replacing Chroma.
 5. Add malware scanning and OCR for larger document workflows.
-6. Promote live RAG evaluation thresholds into CI/CD before release.
+6. Add an append-only LLM usage/cost ledger and optional OpenTelemetry/Langfuse tracing for
+   provider latency, token usage, retries, and cost analysis without logging sensitive evidence.
+7. Evaluate provider-level prompt caching only after usage data shows repeated long prompts; scope
+   cache keys by provider, model, prompt version, workspace, document/filter scope, and collection
+   version.
+8. Promote live RAG evaluation thresholds into CI/CD before release.

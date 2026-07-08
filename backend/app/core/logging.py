@@ -18,7 +18,7 @@ from starlette.responses import Response
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
-logger = logging.getLogger("market_access_evidence_assistant")
+logger = logging.getLogger("kintiga_evidence_assistant")
 
 
 def configure_logging(level: str = "INFO") -> None:

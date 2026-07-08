@@ -41,6 +41,32 @@ python -m pytest tests/integration -q -rs
 The test fixture must render SQLAlchemy URLs with `hide_password=False`; `str(URL)` masks passwords
 as `***`, which breaks temporary database creation.
 
+## Evaluation Runtime
+
+`scripts/evaluate_rag.py` is self-contained for local evaluation. It loads `.env` and `backend/.env`,
+uses `EVAL_DATABASE_URL`, `DATABASE_URL`, or the backend `Settings().database_url`, and stores Chroma
+data in a temporary directory for the run.
+
+When the configured database URL points at `localhost:5433` and no server is listening there, the
+evaluator starts a temporary local PostgreSQL server itself with the installed PostgreSQL binaries:
+`initdb` to create the cluster, `postgres` to run it, and `pg_ctl` to stop it during cleanup. This is
+the normal one-command path and does not require Docker:
+
+```powershell
+python scripts\evaluate_rag.py --mode live --dataset noise\kintiga_market_access_candidate_dataset.zip
+```
+
+Use `--no-start-postgres` when a database is already managed externally, or `--start-postgres` only
+when you explicitly want to start the bundled Docker Compose Postgres service. Live mode still
+requires `GEMINI_API_KEY` or `GOOGLE_API_KEY` in the environment or `backend/.env`.
+
+If an evaluator run is interrupted while using the temporary local PostgreSQL path, stop the server
+with the data directory printed by the evaluator:
+
+```powershell
+pg_ctl -D "<printed rag-eval temp path>\postgres" -m fast -w stop
+```
+
 Answer-history tables are declared in the repository ORM models, not created by request-time DDL.
 Service-layer failures use domain errors and are mapped to the public error envelope only at the API
 boundary.

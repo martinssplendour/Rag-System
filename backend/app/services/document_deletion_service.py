@@ -16,7 +16,7 @@ from app.storage.base import StorageProvider
 from app.utils.hashing import sha256_hex
 from app.vectorstores.base import VectorStore
 
-logger = logging.getLogger("market_access_evidence_assistant")
+logger = logging.getLogger("kintiga_evidence_assistant")
 
 
 @dataclass(frozen=True)

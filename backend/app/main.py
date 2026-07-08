@@ -114,7 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await engine.dispose()
 
     app = FastAPI(
-        title="Market Access Evidence Assistant -- Ingestion API",
+        title="Kintiga Evidence Assistant -- Ingestion API",
         version="0.1.0",
         lifespan=lifespan,
     )

@@ -9,6 +9,12 @@ Run from the repository root:
 
     python scripts/evaluate_rag.py --mode live
     python scripts/evaluate_rag.py --mode mock
+
+The script loads .env and backend/.env, uses the configured database URL,
+creates an isolated temporary evaluation database, and drops it when finished.
+Chroma uses a temporary local directory for each run. If the configured
+database is localhost:5433 and it is not running, the script starts a temporary
+local PostgreSQL server with the installed PostgreSQL tools automatically.
 """
 
 from __future__ import annotations
@@ -19,11 +25,14 @@ import json
 import logging
 import os
 import re
+import shutil
+import socket
+import subprocess
 import sys
 import tempfile
 import time
 import zipfile
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -39,15 +48,50 @@ BACKEND_ROOT = REPO_ROOT / "backend"
 DEFAULT_CASES_PATH = REPO_ROOT / "eval" / "golden_questions.jsonl"
 DATASET_ZIP_PATH = REPO_ROOT / "kintiga_market_access_candidate_dataset.zip"
 EVAL_API_KEY = "local-evaluation-api-key-not-a-secret"
+DEFAULT_POSTGRES_START_TIMEOUT_SECONDS = 60
+DEFAULT_DOCKER_START_TIMEOUT_SECONDS = 30
+
+
+def load_env_file(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+
+        if stripped.startswith("export "):
+            stripped = stripped.removeprefix("export ").lstrip()
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or key in os.environ:
+            continue
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        os.environ[key] = value
+
 
 # Keep app.main import safe even if a local backend/.env contains a strict auth
 # mode. The evaluator passes its own explicit Settings object below.
+load_env_file(REPO_ROOT / ".env")
+load_env_file(BACKEND_ROOT / ".env")
 os.environ["AUTH_MODE"] = "disabled"
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.core.config import Settings  # noqa: E402
-from app.main import create_app  # noqa: E402
-from app.repositories.database import _normalise_async_database_url  # noqa: E402
+try:
+    from app.core.config import Settings  # noqa: E402
+    from app.main import create_app  # noqa: E402
+    from app.repositories.database import _normalise_async_database_url  # noqa: E402
+except ModuleNotFoundError as exc:
+    missing = exc.name or "unknown"
+    raise SystemExit(
+        f"Missing backend Python dependency: {missing}. Run this once from the repo root: "
+        'cd backend; python -m pip install -e ".[dev]"; cd ..'
+    ) from exc
 
 DATASET_FILES: tuple[tuple[str, str, str, str], ...] = (
     ("uk_nice_oncology_drug_summary.txt", "United Kingdom", "UK", "en"),
@@ -69,9 +113,18 @@ class Check:
 @dataclass(frozen=True)
 class CaseResult:
     case_id: str
+    question: str
+    country: str | None
     score: float
     passed: bool
+    status_code: int
     latency_ms: int
+    confidence: str
+    answer: str
+    source_ids: list[str]
+    source_count: int
+    expected_documents: list[str]
+    expected_source_ids: list[str]
     checks: list[Check]
 
 
@@ -102,6 +155,22 @@ def parse_args() -> argparse.Namespace:
             "Base Postgres URL used to create a temporary evaluation database. "
             "Defaults to EVAL_DATABASE_URL, DATABASE_URL, then Settings().database_url."
         ),
+    )
+    parser.add_argument(
+        "--start-postgres",
+        action="store_true",
+        help="Force-start the bundled Docker Compose development Postgres service before connecting.",
+    )
+    parser.add_argument(
+        "--no-start-postgres",
+        action="store_true",
+        help="Never start a local Postgres server automatically.",
+    )
+    parser.add_argument(
+        "--postgres-start-timeout",
+        type=int,
+        default=DEFAULT_POSTGRES_START_TIMEOUT_SECONDS,
+        help="Seconds to wait for the configured Postgres database to accept connections.",
     )
     parser.add_argument(
         "--min-average-score",
@@ -144,29 +213,33 @@ async def run_evaluation(args: argparse.Namespace) -> list[CaseResult]:
         raise SystemExit(
             f"Dataset zip not found at {args.dataset}. Place the provided candidate dataset "
             "zip at the repository root or pass --dataset."
-        )
+    )
     cases = load_cases(args.cases)
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("market_access_evidence_assistant").setLevel(logging.WARNING)
+    logging.getLogger("kintiga_evidence_assistant").setLevel(logging.WARNING)
 
     with tempfile.TemporaryDirectory(
         prefix="rag-eval-",
         ignore_cleanup_errors=True,
     ) as temp_dir:
-        async with temporary_postgres_database(args.database_url) as database_url:
-            temp_root = Path(temp_dir)
-            settings = build_settings(args.mode, temp_root, database_url)
-            app = create_app(settings)
-            transport = ASGITransport(app=app)
-            headers = {"X-API-Key": EVAL_API_KEY}
+        temp_root = Path(temp_dir)
+        with prepared_postgres(args, temp_root) as database_url:
+            async with temporary_postgres_database(
+                database_url,
+                startup_timeout_seconds=args.postgres_start_timeout,
+            ) as database_url:
+                settings = build_settings(args.mode, temp_root, database_url)
+                app = create_app(settings)
+                transport = ASGITransport(app=app)
+                headers = {"X-API-Key": EVAL_API_KEY}
 
-            async with app.router.lifespan_context(app):
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    await seed_dataset(client, headers, args.dataset)
-                    return [
-                        await evaluate_case(client, headers, case, args.mode) for case in cases
-                    ]
+                async with app.router.lifespan_context(app):
+                    async with AsyncClient(transport=transport, base_url="http://test") as client:
+                        await seed_dataset(client, headers, args.dataset)
+                        return [
+                            await evaluate_case(client, headers, case, args.mode) for case in cases
+                        ]
 
 
 def build_settings(mode: str, temp_root: Path, database_url: str) -> Settings:
@@ -215,6 +288,222 @@ def build_settings(mode: str, temp_root: Path, database_url: str) -> Settings:
     )
 
 
+@contextmanager
+def prepared_postgres(args: argparse.Namespace, temp_root: Path):
+    database_url = _base_evaluation_database_url(args.database_url)
+    postgres_process: subprocess.Popen[str] | None = None
+    data_dir = temp_root / "postgres"
+
+    if should_auto_start_local_postgres(database_url, args.no_start_postgres):
+        print(
+            "\nPostgres: no server is listening on localhost:5433; "
+            "starting a temporary local Postgres server.",
+            flush=True,
+        )
+        postgres_process = start_temporary_pg_ctl_postgres(
+            database_url,
+            data_dir,
+            timeout_seconds=args.postgres_start_timeout,
+        )
+        if postgres_process is None:
+            raise SystemExit(
+                "Postgres is not running on localhost:5433 and local PostgreSQL tools were not found. "
+                "Install PostgreSQL locally or pass --start-postgres to use Docker Compose."
+            )
+    elif args.start_postgres:
+        start_docker_postgres()
+
+    try:
+        yield database_url
+    finally:
+        if postgres_process is not None:
+            stop_temporary_postgres(data_dir, postgres_process)
+
+
+def should_auto_start_local_postgres(database_url: str, disabled: bool) -> bool:
+    if disabled:
+        return False
+
+    try:
+        url = make_url(_normalise_async_database_url(database_url))
+    except Exception:
+        return False
+
+    host = (url.host or "").casefold()
+    port = url.port or 5432
+    if host not in {"localhost", "127.0.0.1"} or port != 5433:
+        return False
+
+    return not _tcp_port_accepts_connection(host, port)
+
+
+def _tcp_port_accepts_connection(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def start_temporary_pg_ctl_postgres(
+    database_url: str,
+    data_dir: Path,
+    *,
+    timeout_seconds: int,
+) -> subprocess.Popen[str] | None:
+    initdb = shutil.which("initdb")
+    postgres = shutil.which("postgres")
+    if not initdb or not postgres:
+        print("Postgres: initdb/postgres not found on PATH.")
+        return None
+
+    url = make_url(_normalise_async_database_url(database_url))
+    username = url.username or "postgres"
+    host = url.host or "localhost"
+    port = str(url.port or 5432)
+    log_path = data_dir.parent / "postgres.log"
+    data_dir_arg = data_dir.name
+
+    print(f"Postgres: initializing temporary cluster at {data_dir}", flush=True)
+    try:
+        subprocess.run(
+            [
+                initdb,
+                "-D",
+                data_dir_arg,
+                "-U",
+                username,
+                "--auth=trust",
+                "--encoding=UTF8",
+            ],
+            cwd=data_dir.parent,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=max(timeout_seconds, 1),
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise SystemExit(f"Failed to initialize temporary local Postgres: {detail}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(
+            f"Timed out while initializing temporary local Postgres. Log: {log_path}"
+        ) from exc
+
+    print("Postgres: initialization complete; starting server.", flush=True)
+    with log_path.open("a", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            [
+                postgres,
+                "-D",
+                data_dir_arg,
+                "-h",
+                host,
+                "-p",
+                port,
+            ],
+            cwd=data_dir.parent,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+    wait_for_temporary_postgres(
+        process,
+        host=host,
+        port=int(port),
+        timeout_seconds=timeout_seconds,
+        log_path=log_path,
+    )
+    print(f"Postgres: temporary local server is running on {host}:{port}.", flush=True)
+    return process
+
+
+def wait_for_temporary_postgres(
+    process: subprocess.Popen[str],
+    *,
+    host: str,
+    port: int,
+    timeout_seconds: int,
+    log_path: Path,
+) -> None:
+    deadline = time.monotonic() + max(timeout_seconds, 1)
+    while time.monotonic() < deadline:
+        if _tcp_port_accepts_connection(host, port):
+            return
+
+        return_code = process.poll()
+        if return_code is not None:
+            raise SystemExit(
+                "Temporary local Postgres exited before accepting connections "
+                f"(exit={return_code}). Log: {log_path}"
+            )
+        time.sleep(0.25)
+
+    raise SystemExit(
+        f"Timed out while waiting for temporary local Postgres on {host}:{port}. Log: {log_path}"
+    )
+
+
+def stop_temporary_postgres(data_dir: Path, process: subprocess.Popen[str]) -> None:
+    pg_ctl = shutil.which("pg_ctl")
+    if pg_ctl:
+        subprocess.run(
+            [pg_ctl, "-D", data_dir.name, "-m", "fast", "-w", "stop"],
+            cwd=data_dir.parent,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+def start_docker_postgres() -> None:
+    command = [
+        "docker-compose",
+        "-f",
+        "docker-compose.yml",
+        "-f",
+        "docker-compose.dev.yml",
+        "up",
+        "-d",
+        "postgres",
+    ]
+    print("\nPostgres", flush=True)
+    print("Starting local Docker Compose Postgres service...", flush=True)
+    try:
+        subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_DOCKER_START_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit(
+            "docker-compose was not found. Install Docker Desktop, start Postgres another way "
+            "and pass --no-start-postgres, or pass --database-url pointing at a running Postgres."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(
+            "Timed out while starting local Postgres with docker-compose. "
+            "Make sure Docker Desktop is running, start Postgres another way with "
+            "--no-start-postgres, or pass --database-url pointing at a running Postgres."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise SystemExit(f"Failed to start local Postgres with docker-compose: {detail}") from exc
+    print("Local Postgres requested on localhost:5433.", flush=True)
+
+
 def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
@@ -229,8 +518,12 @@ def _base_evaluation_database_url(explicit_url: str | None) -> str:
 
 
 @asynccontextmanager
-async def temporary_postgres_database(explicit_url: str | None):
-    base_url = make_url(_normalise_async_database_url(_base_evaluation_database_url(explicit_url)))
+async def temporary_postgres_database(
+    base_database_url: str,
+    *,
+    startup_timeout_seconds: int,
+):
+    base_url = make_url(_normalise_async_database_url(base_database_url))
     database_name = f"eval_{uuid4().hex}"
     maintenance_database = os.environ.get("EVAL_POSTGRES_MAINTENANCE_DB", "postgres")
     maintenance_url = base_url.set(database=maintenance_database)
@@ -239,10 +532,18 @@ async def temporary_postgres_database(explicit_url: str | None):
     admin_engine = create_async_engine(
         maintenance_url.render_as_string(hide_password=False),
         isolation_level="AUTOCOMMIT",
+        connect_args={"timeout": min(max(startup_timeout_seconds, 1), 5)},
+    )
+    print(
+        f"\nPostgres: connecting to {base_url.render_as_string(hide_password=True)}",
+        flush=True,
     )
     try:
-        async with admin_engine.connect() as conn:
-            await conn.execute(text(f"CREATE DATABASE {_quote_identifier(database_name)}"))
+        await create_temporary_database(
+            admin_engine,
+            database_name,
+            timeout_seconds=startup_timeout_seconds,
+        )
     except Exception as exc:
         await admin_engine.dispose()
         raise SystemExit(f"Evaluation requires reachable Postgres: {exc}") from exc
@@ -268,11 +569,36 @@ async def temporary_postgres_database(explicit_url: str | None):
         await admin_engine.dispose()
 
 
+async def create_temporary_database(
+    admin_engine: Any,
+    database_name: str,
+    *,
+    timeout_seconds: int,
+) -> None:
+    deadline = time.monotonic() + max(timeout_seconds, 1)
+    last_error: Exception | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            async with admin_engine.connect() as conn:
+                await conn.execute(text(f"CREATE DATABASE {_quote_identifier(database_name)}"))
+            print("Postgres is ready; temporary evaluation database created.")
+            return
+        except Exception as exc:
+            last_error = exc
+            await asyncio.sleep(1)
+
+    raise TimeoutError(
+        f"Postgres did not become ready within {timeout_seconds} seconds: {last_error}"
+    )
+
+
 async def seed_dataset(client: AsyncClient, headers: dict[str, str], dataset_path: Path) -> None:
-    print("Seeding candidate dataset through POST /documents")
+    print("\nDataset seeding")
     for filename, country, country_code, language in DATASET_FILES:
         content = read_dataset_file(dataset_path, filename)
         mime_type = "application/pdf" if filename.endswith(".pdf") else "text/plain"
+        print(f"- Uploading {filename} ({country})")
         response = await client.post(
             "/documents",
             headers=headers,
@@ -352,12 +678,22 @@ async def evaluate_case(
     earned_weight = sum(check.weight for check in checks if check.passed)
     score = (earned_weight / total_weight) * 100 if total_weight else 0.0
     required_ok = all(check.passed for check in checks if check.required)
+    sources = body.get("sources") if isinstance(body.get("sources"), list) else []
 
     return CaseResult(
         case_id=str(case["id"]),
+        question=str(case["question"]),
+        country=case.get("country"),
         score=score,
         passed=required_ok,
+        status_code=response.status_code,
         latency_ms=latency_ms,
+        confidence=str(body.get("confidence") or "n/a"),
+        answer=_response_answer(body, response.text),
+        source_ids=_retrieved_source_ids(sources),
+        source_count=len(sources),
+        expected_documents=[str(item) for item in case.get("expected_documents") or []],
+        expected_source_ids=[str(item) for item in case.get("expected_source_ids") or []],
         checks=checks,
     )
 
@@ -607,6 +943,54 @@ def _normalise(value: str) -> str:
     return lowered.strip()
 
 
+def _response_answer(body: dict[str, Any], fallback_text: str) -> str:
+    answer = body.get("answer")
+    if isinstance(answer, str) and answer.strip():
+        return answer
+
+    detail = body.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        return detail
+    if detail is not None:
+        return json.dumps(detail, sort_keys=True)
+
+    return fallback_text
+
+
+def _short_text(value: str, limit: int = 220) -> str:
+    compact = re.sub(r"\s+", " ", value).strip()
+    if not compact:
+        return "n/a"
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: limit - 3].rstrip()}..."
+
+
+def _format_items(items: list[Any], *, limit: int = 6, empty: str = "none") -> str:
+    if not items:
+        return empty
+
+    values = [str(item) for item in items]
+    visible = ", ".join(values[:limit])
+    remaining = len(values) - limit
+    if remaining > 0:
+        return f"{visible}, +{remaining} more"
+    return visible
+
+
+def _case_status(result: CaseResult, min_case_score: float) -> str:
+    return "PASS" if result.score >= min_case_score and result.passed else "FAIL"
+
+
+def _case_failure_reason(result: CaseResult, min_case_score: float) -> str:
+    reasons: list[str] = []
+    if result.score < min_case_score:
+        reasons.append(f"score below {min_case_score:.1f}%")
+    if not result.passed:
+        reasons.append("required check failed")
+    return "; ".join(reasons) if reasons else "meets thresholds"
+
+
 def print_report(
     results: list[CaseResult],
     *,
@@ -615,25 +999,63 @@ def print_report(
     verbose: bool,
 ) -> bool:
     average = sum(result.score for result in results) / len(results)
-    case_failures = [result for result in results if result.score < min_case_score or not result.passed]
+    case_failures = [
+        result for result in results if _case_status(result, min_case_score) == "FAIL"
+    ]
+    case_passes = len(results) - len(case_failures)
     passed = average >= min_average_score and not case_failures
 
     print("\nRAG evaluation report")
-    print("---------------------")
-    print(f"Cases: {len(results)}")
-    print(f"Average score: {average:.1f}%")
-    print(f"Minimum average score: {min_average_score:.1f}%")
-    print(f"Minimum case score: {min_case_score:.1f}%")
+    print("=====================")
     print(f"Result: {'PASS' if passed else 'FAIL'}")
-    print("")
+    print(f"Cases: {len(results)} ({case_passes} pass, {len(case_failures)} fail)")
+    print(f"Average score: {average:.1f}% (required >= {min_average_score:.1f}%)")
+    print(f"Case score threshold: {min_case_score:.1f}%")
+    if case_failures:
+        print(f"Failed cases: {_format_items([result.case_id for result in case_failures])}")
+
+    print("\nCase results")
+    print("------------")
 
     for result in results:
-        status = "PASS" if result.score >= min_case_score and result.passed else "FAIL"
-        print(f"{status} {result.case_id}: {result.score:.1f}% ({result.latency_ms} ms)")
-        if verbose or status == "FAIL":
-            for check in result.checks:
+        status = _case_status(result, min_case_score)
+        passed_checks = sum(1 for check in result.checks if check.passed)
+        failed_checks = [check for check in result.checks if not check.passed]
+
+        print(f"\n[{status}] {result.case_id}")
+        print(
+            f"  Score: {result.score:.1f}% | latency: {result.latency_ms} ms | "
+            f"checks: {passed_checks}/{len(result.checks)}"
+        )
+        if status == "FAIL":
+            print(f"  Reason: {_case_failure_reason(result, min_case_score)}")
+        print(f"  Question: {_short_text(result.question, 160)}")
+        if result.country:
+            print(f"  Country: {result.country}")
+        print(
+            f"  Response: status {result.status_code}, confidence {result.confidence}, "
+            f"sources {result.source_count}"
+        )
+        print(f"  Retrieved source IDs: {_format_items(result.source_ids)}")
+        if result.expected_documents:
+            print(f"  Expected documents: {_format_items(result.expected_documents)}")
+        if result.expected_source_ids:
+            print(f"  Expected source IDs: {_format_items(result.expected_source_ids)}")
+        print(f"  Answer: {_short_text(result.answer)}")
+
+        checks_to_print = result.checks if verbose else failed_checks
+        if checks_to_print:
+            label = "Checks" if verbose else "Failed checks"
+            print(f"  {label}:")
+            for check in checks_to_print:
                 marker = "ok" if check.passed else "fail"
-                print(f"  - {marker} {check.name}: {check.detail}")
+                required = ", required" if check.required else ""
+                print(
+                    f"    - {marker} {check.name}{required}: "
+                    f"{_short_text(check.detail, 180)}"
+                )
+        elif not verbose:
+            print("  Checks: all passed")
 
     return passed
 
