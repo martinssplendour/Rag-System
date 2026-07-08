@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.api.errors import AppError
 from app.core.constants import STATUS_DELETED
+from app.domain.errors import ServiceError
 from app.repositories.answers import PostgresAnswerRepository
 from app.repositories.chunks import ChunkRepository
 from app.repositories.documents import DocumentRepository
@@ -34,7 +34,7 @@ async def soft_delete_document(
 ) -> DeletedDocumentCleanup:
     document = await DocumentRepository(session).get(workspace_id, document_id)
     if document is None:
-        raise AppError("DOCUMENT_NOT_FOUND", "Document not found.", 404)
+        raise ServiceError("DOCUMENT_NOT_FOUND", "Document not found.", 404)
 
     storage_path = document.storage_path
     if document.status != STATUS_DELETED:

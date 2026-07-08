@@ -1,0 +1,20 @@
+services:
+  postgres:
+    volumes:
+      - postgres-mock-data:/var/lib/postgresql/data
+
+  backend:
+    environment:
+      EMBEDDING_PROVIDER: mock
+      EMBEDDING_MODEL: mock
+      EMBEDDING_DIMENSION: "64"
+      LLM_PROVIDER: mock
+      CHAT_MODEL: mock
+      RETRIEVAL_MIN_SIMILARITY: "0.0"
+      CHROMA_COLLECTION_NAME: market_access_chunks_mock
+    volumes:
+      - backend-mock-data:/app/data
+
+volumes:
+  postgres-mock-data:
+  backend-mock-data:

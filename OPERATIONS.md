@@ -28,9 +28,22 @@ internal reason.
 Prompt text lives in versioned Markdown files under `backend/prompts/`. `PROMPT_VERSION` selects
 which prompt files are loaded, and the app refuses to start if that version is not present.
 
-The app uses Postgres for users, documents, chunks, ingestion jobs, questions, and answers.
+The app uses Postgres for users, documents, chunks, ingestion jobs, questions, answers, and answer
+sources.
 DB-backed tests create isolated temporary Postgres databases through the same SQLAlchemy repository
-layer.
+layer. For local runs, set `TEST_DATABASE_URL` to the dev Postgres container, for example:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql+asyncpg://kintiga:kintiga_dev_password@localhost:5433/kintiga"
+python -m pytest tests/integration -q -rs
+```
+
+The test fixture must render SQLAlchemy URLs with `hide_password=False`; `str(URL)` masks passwords
+as `***`, which breaks temporary database creation.
+
+Answer-history tables are declared in the repository ORM models, not created by request-time DDL.
+Service-layer failures use domain errors and are mapped to the public error envelope only at the API
+boundary.
 
 ## Failure Handling
 
@@ -46,6 +59,15 @@ Document deletion is also failure-tolerant. The request marks the document `dele
 stop seeing it immediately. Cleanup of Chroma vectors, chunks, ingestion jobs, stored files, and
 retrieval caches then runs as a background task. Cleanup failures are logged by cleanup area and do
 not expose stack traces to the browser.
+
+Frontend chat state is intentionally lightweight. Completed transcript messages are stored in
+browser `sessionStorage` and cleared on logout or Restart. Pending ask requests are owned by a
+workspace-level hook, so navigating between Chat, Upload, and Document Library does not cancel the
+UI update when the backend response returns.
+
+Local-only artifacts are ignored and should stay uncommitted: `.env`, `backend/.env`,
+`backend/data/`, `frontend/node_modules/`, and `noise/`. Generated caches and virtualenvs can be
+deleted safely and recreated from the documented setup commands.
 
 ## Observability
 

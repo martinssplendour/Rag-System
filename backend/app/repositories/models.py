@@ -10,7 +10,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.database import Base
@@ -112,3 +123,57 @@ class IngestionJob(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
+
+
+class Question(Base):
+    __tablename__ = "questions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    country_filter: Mapped[str | None] = mapped_column(String(100))
+    document_ids_filter: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    answers: Mapped[list[Answer]] = relationship(back_populates="question", cascade="all, delete-orphan")
+
+
+class Answer(Base):
+    __tablename__ = "answers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    question_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    uncertainty: Mapped[str | None] = mapped_column(Text)
+    limitations: Mapped[str] = mapped_column(Text, nullable=False)
+    model_provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    question: Mapped[Question] = relationship(back_populates="answers")
+    sources: Mapped[list[AnswerSource]] = relationship(back_populates="answer", cascade="all, delete-orphan")
+
+
+class AnswerSource(Base):
+    __tablename__ = "answer_sources"
+    __table_args__ = (UniqueConstraint("answer_id", "source_label", name="uq_answer_sources_answer_label"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    answer_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chunk_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("document_chunks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    relevance_score: Mapped[float] = mapped_column(Float, nullable=False)
+    citation_order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    answer: Mapped[Answer] = relationship(back_populates="sources")

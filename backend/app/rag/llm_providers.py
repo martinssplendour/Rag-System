@@ -141,7 +141,7 @@ class LangChainAnswerGenerator:
 
 
 def create_answer_generator(settings: Any) -> AnswerGenerator:
-    provider = str(getattr(settings, "llm_provider", "mock")).lower()
+    provider = str(getattr(settings, "llm_provider", "gemini")).lower()
     timeout_seconds = int(getattr(settings, "llm_timeout_seconds", 45))
     max_retries = int(getattr(settings, "llm_max_retries", 2))
     system_prompt = load_system_prompt(str(getattr(settings, "prompt_version", "1.0.0")))

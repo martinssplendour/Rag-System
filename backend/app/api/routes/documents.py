@@ -19,6 +19,7 @@ from app.api.dependencies import (
     require_admin_upload,
 )
 from app.core.config import Settings
+from app.domain.uploads import UploadedFileInput
 from app.schemas.documents import (
     DocumentDeleteResponse,
     DocumentListResponse,
@@ -45,12 +46,16 @@ async def create_document(
     settings: Settings = Depends(get_settings),
     _admin: None = Depends(require_admin_upload),
 ) -> DocumentResponse:
+    uploaded_file = None
+    if file is not None:
+        uploaded_file = UploadedFileInput(filename=file.filename, content=await file.read())
+
     document = await document_service.create_document(
         session=session,
         workspace_id=workspace_id,
         storage=storage,
         settings=settings,
-        file=file,
+        file=uploaded_file,
         text=text,
         title=title,
         country=country,

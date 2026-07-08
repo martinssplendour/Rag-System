@@ -11,9 +11,9 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.errors import AppError
 from app.core.config import Settings
 from app.core.security import create_access_token, hash_password, verify_password
+from app.domain.errors import ServiceError
 from app.repositories.models import User
 from app.repositories.users import UserRepository
 from app.schemas.auth import TokenResponse
@@ -54,7 +54,7 @@ async def register(*, session: AsyncSession, settings: Settings, email: str, pas
     user_repo = UserRepository(session)
     existing = await user_repo.get_by_email(email)
     if existing is not None:
-        raise AppError("EMAIL_ALREADY_REGISTERED", "An account with this email already exists.", 409)
+        raise ServiceError("EMAIL_ALREADY_REGISTERED", "An account with this email already exists.", 409)
 
     user = User(
         id=uuid4().hex,
@@ -74,7 +74,7 @@ async def login(*, session: AsyncSession, settings: Settings, email: str, passwo
     # Deliberately identical error for "no such user" and "wrong password" --
     # distinguishing them lets an attacker enumerate registered emails.
     if user is None or not verify_password(password, user.password_hash):
-        raise AppError("INVALID_CREDENTIALS", "Incorrect email or password.", 401)
+        raise ServiceError("INVALID_CREDENTIALS", "Incorrect email or password.", 401)
     if _is_configured_admin(user.email, settings) and not user.is_admin:
         user.is_admin = True
         await session.commit()

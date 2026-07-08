@@ -75,6 +75,13 @@ Important chunks:
 - Chunks 9-10: evidence overview prose split with overlap.
 - Chunks 11-13: benefit, pricing/access, and uncertainty sections.
 
+Retrieval support note:
+
+German chunks keep original German text in `raw_text`. During ingestion, matching German terms also
+receive deterministic English aliases in searchable `content` only, such as "additional evidence",
+"longer follow-up", "subgroup analyses", "patient-relevant endpoints", and "real-world evidence".
+This improves English-to-German retrieval without changing the citation snippets shown to users.
+
 ### France HAS Medtech PDF
 
 Result: good after table-aware PDF extraction.
@@ -236,3 +243,12 @@ Retrieval signal: MEA registry
 ```
 
 Result: table integrity is preserved for the supplied dataset. The extracted structured tables are consistent with the visible tables, and the retrieval chunks preserve the row-level relationship between domain, evidence, concern, and retrieval signal.
+
+## Retrieval Verification Update
+
+Date verified: 2026-07-08
+
+After adding English retrieval support for the German note and relaxing the per-document diversity
+cap for single-document retrieval, the live evaluator passed all 10 configured questions with a
+100% average score. The German additional-evidence question matched all expected source concepts
+while returning original German snippets.

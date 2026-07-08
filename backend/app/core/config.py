@@ -52,9 +52,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 60
 
-    embedding_provider: str = "mock"
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimension: int = 1536
+    embedding_provider: str = "gemini"
+    embedding_model: str = "models/gemini-embedding-001"
+    embedding_dimension: int = 3072
     openai_api_key: str | None = None
     gemini_api_key: str | None = None
 
@@ -70,13 +70,12 @@ class Settings(BaseSettings):
     # Part 2 (retrieval/answer generation) settings. Declared here -- not
     # just read via getattr(settings, name, default) -- because
     # pydantic-settings with extra="ignore" silently drops any .env
-    # variable that isn't a declared field. Without these, LLM_PROVIDER=
-    # gemini/CHAT_MODEL in .env would never actually reach Settings, and
-    # /ask would silently fall back to the mock provider despite .env
-    # saying otherwise. See BUILD_SPEC_PART2_RETRIEVAL_AND_ANSWER.md
-    # section 7 for the canonical list of these variables.
-    llm_provider: str = "mock"
-    chat_model: str | None = None
+    # variable that isn't a declared field. Without these, provider/model
+    # values in .env would never actually reach Settings. See
+    # BUILD_SPEC_PART2_RETRIEVAL_AND_ANSWER.md section 7 for the canonical
+    # list of these variables.
+    llm_provider: str = "gemini"
+    chat_model: str | None = "gemini-3.5-flash"
     llm_timeout_seconds: int = 45
     llm_max_retries: int = 2
     google_api_key: str | None = None
@@ -90,7 +89,7 @@ class Settings(BaseSettings):
     chroma_collection_name: str = "market_access_chunks"
     retrieval_candidate_count: int = 12
     retrieval_context_count: int = 5
-    retrieval_min_similarity: float = 0.45
+    retrieval_min_similarity: float = 0.75
     retrieval_high_confidence_similarity: float = 0.75
     retrieval_max_chunks_per_document: int = 3
     retrieval_max_context_chars: int = 12_000

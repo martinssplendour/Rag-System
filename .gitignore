@@ -1,6 +1,7 @@
 .run/
 .ruff_cache/
 .pytest_cache/
+noise/
 .env
 
 backend/.venv/

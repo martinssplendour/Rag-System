@@ -15,7 +15,7 @@ services:
       EMBEDDING_DIMENSION: "3072"
       LLM_PROVIDER: gemini
       CHAT_MODEL: gemini-3.5-flash
-      RETRIEVAL_MIN_SIMILARITY: "0.45"
+      RETRIEVAL_MIN_SIMILARITY: "0.75"
     volumes:
       - backend-live-data:/app/data
 

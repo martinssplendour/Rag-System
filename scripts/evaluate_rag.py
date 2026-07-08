@@ -7,8 +7,8 @@ checks answer concepts where the golden file supplies them.
 
 Run from the repository root:
 
-    python scripts/evaluate_rag.py --mode mock
     python scripts/evaluate_rag.py --mode live
+    python scripts/evaluate_rag.py --mode mock
 """
 
 from __future__ import annotations
@@ -80,8 +80,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         choices=("mock", "live"),
-        default="mock",
-        help="mock checks the local pipeline; live uses Gemini for semantic answer quality.",
+        default="live",
+        help="live uses Gemini for semantic answer quality; mock is only an explicit offline smoke check.",
     )
     parser.add_argument(
         "--cases",
@@ -236,7 +236,10 @@ async def temporary_postgres_database(explicit_url: str | None):
     maintenance_url = base_url.set(database=maintenance_database)
     evaluation_url = base_url.set(database=database_name)
 
-    admin_engine = create_async_engine(str(maintenance_url), isolation_level="AUTOCOMMIT")
+    admin_engine = create_async_engine(
+        maintenance_url.render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+    )
     try:
         async with admin_engine.connect() as conn:
             await conn.execute(text(f"CREATE DATABASE {_quote_identifier(database_name)}"))
@@ -245,7 +248,7 @@ async def temporary_postgres_database(explicit_url: str | None):
         raise SystemExit(f"Evaluation requires reachable Postgres: {exc}") from exc
 
     try:
-        yield str(evaluation_url)
+        yield evaluation_url.render_as_string(hide_password=False)
     finally:
         async with admin_engine.connect() as conn:
             await conn.execute(
@@ -398,6 +401,9 @@ def score_response(
     )
     checks.append(score_source_shape(sources))
     checks.append(score_expected_documents(case, sources))
+    if case.get("expected_source_ids"):
+        checks.append(score_expected_source_ids(case, sources))
+        checks.append(score_source_id_precision(case, sources))
 
     source_text = " ".join(str(source.get("snippet") or "") for source in sources)
     source_groups = case.get("expected_source_concepts") or []
@@ -489,6 +495,55 @@ def score_expected_documents(case: dict[str, Any], sources: list[Any]) -> Check:
     )
 
 
+def score_expected_source_ids(case: dict[str, Any], sources: list[Any]) -> Check:
+    expected = [str(item) for item in case.get("expected_source_ids") or []]
+    if not expected:
+        return Check("source_id_recall", True, "not configured", 0)
+
+    retrieved = _retrieved_source_ids(sources)
+    found = [source_id for source_id in expected if source_id in retrieved]
+    minimum = int(case.get("min_expected_source_ids_found", len(expected)))
+    passed = len(found) >= minimum
+    return Check(
+        name="source_id_recall",
+        passed=passed,
+        detail=f"found={found or []}; expected={expected}; minimum={minimum}",
+        weight=20,
+        required=False,
+    )
+
+
+def score_source_id_precision(case: dict[str, Any], sources: list[Any]) -> Check:
+    relevant = {
+        str(item)
+        for item in (
+            (case.get("expected_source_ids") or [])
+            + (case.get("acceptable_source_ids") or [])
+            + (case.get("relevant_source_ids") or [])
+        )
+    }
+    if not relevant:
+        return Check("source_id_precision", True, "not configured", 0)
+
+    retrieved = _retrieved_source_ids(sources)
+    if not retrieved:
+        return Check("source_id_precision", False, "no retrieved/cited source IDs", 10)
+
+    relevant_retrieved = [source_id for source_id in retrieved if source_id in relevant]
+    precision = len(relevant_retrieved) / len(retrieved)
+    threshold = float(case.get("min_source_id_precision", 0.5))
+    return Check(
+        name="source_id_precision",
+        passed=precision >= threshold,
+        detail=(
+            f"precision={precision:.2f}; relevant_retrieved={relevant_retrieved}; "
+            f"retrieved={retrieved}; threshold={threshold:.2f}"
+        ),
+        weight=10,
+        required=False,
+    )
+
+
 def source_matches_document(source: Any, expected_document: str) -> bool:
     if not isinstance(source, dict):
         return False
@@ -499,6 +554,14 @@ def source_matches_document(source: Any, expected_document: str) -> bool:
         source.get("document_id"),
     ]
     return any(expected in _normalise(str(candidate or "")) for candidate in candidates)
+
+
+def _retrieved_source_ids(sources: list[Any]) -> list[str]:
+    source_ids: list[str] = []
+    for source in sources:
+        if isinstance(source, dict) and source.get("source_id"):
+            source_ids.append(str(source["source_id"]))
+    return source_ids
 
 
 def score_concepts(

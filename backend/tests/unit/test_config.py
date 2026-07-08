@@ -49,3 +49,13 @@ def test_settings_accepts_safe_operational_values() -> None:
     )
 
     assert settings.ingestion_job_max_attempts == 1
+
+
+def test_provider_defaults_use_real_gemini_providers() -> None:
+    settings = Settings()
+
+    assert settings.embedding_provider == "gemini"
+    assert settings.embedding_model == "models/gemini-embedding-001"
+    assert settings.embedding_dimension == 3072
+    assert settings.llm_provider == "gemini"
+    assert settings.chat_model == "gemini-3.5-flash"

@@ -12,10 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.errors import AppError
 from app.core.config import Settings
 from app.core.constants import (
     SOURCE_TYPE_DIRECT_TEXT,
@@ -24,6 +22,8 @@ from app.core.constants import (
     SOURCE_TYPE_TXT,
     STATUS_PROCESSING,
 )
+from app.domain.errors import ServiceError
+from app.domain.uploads import UploadedFileInput
 from app.rag.citation_labels import allocate_document_citation_prefix, build_document_citation_base
 from app.repositories.documents import DocumentRepository
 from app.repositories.ingestion_jobs import IngestionJobRepository
@@ -50,14 +50,15 @@ class UploadInput:
     content_type: str
 
 
-def _validate_file_upload(file: UploadFile, raw_bytes: bytes, settings: Settings) -> UploadInput:
+def _validate_file_upload(file: UploadedFileInput, settings: Settings) -> UploadInput:
+    raw_bytes = file.content
     if len(raw_bytes) == 0:
-        raise AppError("INVALID_INPUT", "Uploaded file is empty.", 400)
+        raise ServiceError("INVALID_INPUT", "Uploaded file is empty.", 400)
     if len(raw_bytes) > settings.max_upload_bytes:
-        raise AppError("FILE_TOO_LARGE", "Uploaded file exceeds the maximum allowed size.", 413)
+        raise ServiceError("FILE_TOO_LARGE", "Uploaded file exceeds the maximum allowed size.", 413)
     safe_name = sanitize_filename(file.filename or "upload")
     if not is_allowed_extension(safe_name):
-        raise AppError("UNSUPPORTED_FILE_TYPE", "Only PDF, TXT, and DOCX files are supported.", 415)
+        raise ServiceError("UNSUPPORTED_FILE_TYPE", "Only PDF, TXT, and DOCX files are supported.", 415)
 
     extension = extension_of(safe_name)
     if extension == ".pdf":
@@ -78,7 +79,7 @@ def _validate_file_upload(file: UploadFile, raw_bytes: bytes, settings: Settings
     # arbitrary binary content, or "notes.txt" containing a renamed
     # executable, must be rejected even though the extension is allowed.
     if not content_is_valid:
-        raise AppError(
+        raise ServiceError(
             "UNSUPPORTED_FILE_TYPE", "File content does not match its extension.", 415
         )
     return UploadInput(
@@ -92,11 +93,11 @@ def _validate_file_upload(file: UploadFile, raw_bytes: bytes, settings: Settings
 
 def _validate_direct_text(text: str, title: str | None, settings: Settings) -> UploadInput:
     if not title or not title.strip():
-        raise AppError("INVALID_INPUT", "title is required when submitting direct text.", 400)
+        raise ServiceError("INVALID_INPUT", "title is required when submitting direct text.", 400)
     if len(text) == 0:
-        raise AppError("INVALID_INPUT", "Direct text must not be empty.", 400)
+        raise ServiceError("INVALID_INPUT", "Direct text must not be empty.", 400)
     if len(text) > settings.max_direct_text_chars:
-        raise AppError("INVALID_INPUT", "Direct text exceeds the maximum allowed length.", 400)
+        raise ServiceError("INVALID_INPUT", "Direct text exceeds the maximum allowed length.", 400)
     raw_bytes = text.encode("utf-8")
     return UploadInput(
         raw_bytes=raw_bytes,
@@ -108,13 +109,12 @@ def _validate_direct_text(text: str, title: str | None, settings: Settings) -> U
 
 
 async def _resolve_upload(
-    *, file: UploadFile | None, text: str | None, title: str | None, settings: Settings
+    *, file: UploadedFileInput | None, text: str | None, title: str | None, settings: Settings
 ) -> UploadInput:
     if (file is None) == (text is None):
-        raise AppError("INVALID_INPUT", "Exactly one of file or text must be supplied.", 400)
+        raise ServiceError("INVALID_INPUT", "Exactly one of file or text must be supplied.", 400)
     if file is not None:
-        raw_bytes = await file.read()
-        return _validate_file_upload(file, raw_bytes, settings)
+        return _validate_file_upload(file, settings)
     assert text is not None
     return _validate_direct_text(text, title, settings)
 
@@ -236,7 +236,7 @@ async def create_document(
     workspace_id: str,
     storage: StorageProvider,
     settings: Settings,
-    file: UploadFile | None,
+    file: UploadedFileInput | None,
     text: str | None,
     title: str | None,
     country: str | None = None,
@@ -251,7 +251,7 @@ async def create_document(
     doc_repo = DocumentRepository(session)
     existing = await doc_repo.get_by_hash(workspace_id, upload.content_hash)
     if existing is not None:
-        raise AppError(
+        raise ServiceError(
             "DUPLICATE_DOCUMENT",
             "A document with identical content already exists.",
             409,

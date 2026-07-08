@@ -70,31 +70,86 @@ async def test_invalid_citation_gets_one_repair_attempt() -> None:
     assert [source.source_id for source in response.sources] == ["UK-NICE-001"]
 
 
+@pytest.mark.anyio
+async def test_multi_question_request_runs_retrieval_per_sub_question() -> None:
+    embedding_provider = FakeEmbeddingProvider()
+    retriever = FakeRetriever([_chunk("chunk-1")])
+    generator = FakeGenerator(
+        [
+            GroundedAnswer(
+                answer=(
+                    "1. The UK evidence gap was immature survival data [UK-NICE-001].\n\n"
+                    "2. The Italian uncertainty was budget impact sensitivity [UK-NICE-001]."
+                ),
+                source_ids=["UK-NICE-001"],
+                evidence_sufficient=True,
+            ),
+        ]
+    )
+    service = EvidenceAssistantService(
+        embedding_provider=embedding_provider,
+        retriever=retriever,
+        answer_generator=generator,
+        answer_repository=FakeRepository(ready_count=1),
+        settings=Settings(),
+    )
+
+    response = await service.ask(
+        question=(
+            "What were the UK evidence gaps?\n"
+            "Why was the Italian budget impact estimate uncertain?"
+        ),
+        workspace_id="workspace",
+        country=None,
+        document_ids=None,
+    )
+
+    assert embedding_provider.texts == [
+        "What were the UK evidence gaps?",
+        "Why was the Italian budget impact estimate uncertain?",
+    ]
+    assert retriever.queries == embedding_provider.texts
+    assert generator.calls == 1
+    assert "What were the UK evidence gaps?" in generator.questions[0]
+    assert "Why was the Italian budget impact estimate uncertain?" in generator.questions[0]
+    assert "Allowed source IDs: UK-NICE-001" in generator.questions[0]
+    assert "1. The UK evidence gap" in response.answer
+    assert "2. The Italian uncertainty" in response.answer
+    assert response.confidence == "medium"
+    assert [source.source_id for source in response.sources] == ["UK-NICE-001"]
+
+
 class Settings:
     retrieval_candidate_count = 12
-    retrieval_min_similarity = 0.45
+    retrieval_min_similarity = 0.75
     retrieval_high_confidence_similarity = 0.75
     prompt_version = "1.0.0"
 
 
 class FakeEmbeddingProvider:
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
     async def embed_query(self, text: str) -> list[float]:
-        del text
+        self.texts.append(text)
         return [0.1, 0.2, 0.3]
 
 
 class FakeRetriever:
     def __init__(self, chunks: list[RetrievedChunk]) -> None:
         self.chunks = chunks
+        self.queries: list[str] = []
 
     async def retrieve(
         self,
+        query: str,
         query_embedding: list[float],
         workspace_id: str,
         country: str | None,
         document_ids: list[str] | None,
         candidate_count: int,
     ) -> list[RetrievedChunk]:
+        self.queries.append(query)
         del query_embedding, workspace_id, country, document_ids, candidate_count
         return self.chunks
 
@@ -106,6 +161,8 @@ class FakeGenerator:
     def __init__(self, answers: list[GroundedAnswer]) -> None:
         self.answers = answers
         self.calls = 0
+        self.questions: list[str] = []
+        self.contexts: list[str] = []
 
     async def generate(
         self,
@@ -113,7 +170,9 @@ class FakeGenerator:
         context: str,
         response_language: str | None = None,
     ) -> GroundedAnswer:
-        del question, context, response_language
+        del response_language
+        self.questions.append(question)
+        self.contexts.append(context)
         self.calls += 1
         return self.answers.pop(0)
 
@@ -169,6 +228,6 @@ def _chunk(chunk_id: str) -> RetrievedChunk:
         country_code="UK",
         language="en",
         chunk_index=0,
-        relevance_score=0.70,
+        relevance_score=0.80,
         metadata={"workspace_id": "workspace", "status": "ready"},
     )

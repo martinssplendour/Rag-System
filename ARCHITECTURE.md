@@ -15,14 +15,35 @@ FastAPI API
   |-- document validation + raw file storage
   |-- Postgres metadata + ingestion_jobs
   |-- background ingestion worker
-  |-- Chroma retriever
+  |-- Chroma-backed retrieval package
   '-- LLM answer generator
 
 Local persistence:
-  Postgres: users, documents, chunks, ingestion jobs, questions, answers
+  Postgres: users, documents, chunks, ingestion jobs, questions, answers, answer_sources
   Local files: original uploaded evidence
   Chroma: chunk vectors and retrieval metadata
 ```
+
+## Code Organization
+
+The implementation is organized to match the senior-project-pack modularity checklist:
+
+- The React entry point, `frontend/src/App.tsx`, owns session state and switches between auth and
+  workspace screens. Feature UI lives under `frontend/src/features/` (`auth`, `workspace`,
+  `upload`, `documents`, `chat`), with shared primitives in `components`, `lib`, and `constants`.
+- Chat request state lives in `frontend/src/features/chat/useChatSession.ts` at the workspace level,
+  so a pending answer continues if the user navigates away from the chat view and appears when they
+  return.
+- API routes keep FastAPI-specific concerns at the boundary. They translate upload objects,
+  dependency output, and service errors into public request/response shapes.
+- `backend/app/domain/` owns service-level errors and upload DTOs, so services do not import
+  FastAPI upload classes or API error envelopes.
+- Services coordinate use cases; repositories own SQLAlchemy persistence. `questions`, `answers`,
+  and `answer_sources` are ORM models in `backend/app/repositories/models.py`, and answer writes go
+  through `backend/app/repositories/answers.py`.
+- Retrieval internals live under `backend/app/rag/retrieval/` (`models`, `chroma`, `lexical`,
+  `ranking`, `source_labels`, `utils`). `backend/app/rag/retriever.py` remains as compatibility
+  exports for older imports.
 
 ## Sync vs Background Work
 
@@ -87,6 +108,19 @@ At ask time, `/ask` stays synchronous because the user is waiting for an answer.
 The API returns original `raw_text` snippets, not rewritten embedding text, so citations preserve the
 source language and wording.
 
+For German documents, ingestion adds deterministic English retrieval aliases to searchable chunk
+`content` only. This improves English-to-German retrieval for terms such as additional evidence,
+follow-up, subgroup analysis, patient-relevant endpoints, and real-world evidence while leaving
+`raw_text` unchanged for citation cards.
+
+The retrieval package keeps provider access, lexical scoring, ranking/deduplication, and source-label
+assignment in separate modules behind the same `RetrievalService` contract. That keeps the API and
+answer-generation service insulated from Chroma-specific details.
+
+The ranking step enforces a per-document diversity cap only when multiple documents are eligible.
+For single-document/country-specific retrieval, the cap is relaxed so a later highly relevant
+section from the same document is not excluded from context.
+
 Prompt text is kept in versioned Markdown files under `backend/prompts/`, not embedded directly in
 the Python service logic. The code loads the prompt selected by `PROMPT_VERSION`, and startup fails
 if the configured prompt version is missing. This keeps prompt changes reviewable and gives a clear
@@ -107,6 +141,10 @@ The PDF's example answer is used as an answer-concept check for the UK evidence-
 evaluator deliberately avoids an LLM-as-judge in the MVP so results are deterministic and easy to
 explain. Mock mode checks the pipeline offline; live mode uses Gemini and is the stronger answer
 quality check.
+
+Latest local verification after the German retrieval-support and ranking changes: live mode passed
+all 10 evaluation cases with a 100% average score, including the English question against the German
+AMNOG document.
 
 ## Operations
 
@@ -130,6 +168,18 @@ stale cache.
 Full answer caching is intentionally not implemented in the MVP. It is easier to make stale or
 unsafe in a multi-tenant RAG app because answers depend on the tenant's current ready documents,
 retrieval thresholds, model version, prompt version, and citation validation.
+
+## Frontend Session State
+
+The chat UI persists completed transcript messages in `sessionStorage`, keyed by workspace and
+email. That storage is convenience state for the browser session and is cleared on logout or when
+the user clicks Restart. Pending requests are not stored in browser storage, but the request
+lifecycle is owned by the workspace-level chat hook, so switching to Upload Evidence or Document
+Library does not drop the response.
+
+Answer rows are still persisted server-side in Postgres. The MVP does not expose a "load historical
+conversations" API or paginated conversation history screen; that is a production follow-up if
+long-lived chat history becomes part of the product.
 
 ## Security and Tenancy
 

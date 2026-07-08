@@ -24,6 +24,7 @@ from app.rag.preprocessing import (
     strip_header_block,
     strip_trailer_section,
 )
+from app.rag.retrieval_support import add_english_retrieval_support
 from app.repositories.chunks import ChunkRepository
 from app.repositories.models import DocumentChunk
 from app.utils.language import detect_language
@@ -211,6 +212,7 @@ async def ingest_document(
     full_text = "\n".join(page.text for page in pages)
     language = detect_language(full_text, hint=language_hint or extracted_metadata.get("language"))
     extracted_metadata["language"] = language
+    drafts = add_english_retrieval_support(drafts, language=language)
 
     effective_country = context.country or extracted_metadata.get("country")
     effective_external_id = context.external_document_id or extracted_metadata.get("external_document_id")

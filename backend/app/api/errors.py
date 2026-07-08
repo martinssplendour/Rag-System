@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
 
+from app.domain.errors import ServiceError
 from app.schemas.common import ErrorDetail, ErrorEnvelope
 
 logger = logging.getLogger("market_access_evidence_assistant")
@@ -64,6 +65,13 @@ def _safe_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=_envelope(request, exc.code, exc.message, exc.details),
+        )
+
+    @app.exception_handler(ServiceError)
+    async def handle_service_error(request: Request, exc: ServiceError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(request, exc.code, exc.message, exc.details),

@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-kintiga}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kintiga_dev_password}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-gemini-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -19,6 +19,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,12 +33,15 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kintiga}:${POSTGRES_PASSWORD:-kintiga_dev_password}@postgres:5432/${POSTGRES_DB:-kintiga}
       LOCAL_STORAGE_DIR: /app/data/uploads
       CHROMA_PERSIST_DIR: /app/data/chroma
-      EMBEDDING_PROVIDER: mock
-      LLM_PROVIDER: mock
-      RETRIEVAL_MIN_SIMILARITY: "0.0"
+      EMBEDDING_PROVIDER: gemini
+      EMBEDDING_MODEL: models/gemini-embedding-001
+      EMBEDDING_DIMENSION: "3072"
+      LLM_PROVIDER: gemini
+      CHAT_MODEL: gemini-3.5-flash
+      RETRIEVAL_MIN_SIMILARITY: "0.75"
       CHROMA_COLLECTION_NAME: market_access_chunks
     volumes:
-      - backend-mock-data:/app/data
+      - backend-data:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready', timeout=5)"]
       interval: 10s
@@ -54,5 +59,5 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres-data:
-  backend-mock-data:
+  postgres-gemini-data:
+  backend-data:

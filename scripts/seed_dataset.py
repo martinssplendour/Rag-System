@@ -16,7 +16,6 @@ Run from the repository root:
 from __future__ import annotations
 
 import asyncio
-import io
 import sys
 import zipfile
 from pathlib import Path
@@ -28,11 +27,11 @@ DATASET_ZIP = REPO_ROOT / "kintiga_market_access_candidate_dataset.zip"
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from sqlalchemy import text  # noqa: E402
-from starlette.datastructures import Headers, UploadFile  # noqa: E402
 
-from app.api.errors import AppError  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.core.constants import TRAILER_HEADINGS  # noqa: E402
+from app.domain.errors import ServiceError  # noqa: E402
+from app.domain.uploads import UploadedFileInput  # noqa: E402
 from app.rag.embeddings import get_embedding_provider  # noqa: E402
 from app.repositories.database import build_engine, build_session_factory, create_all  # noqa: E402
 from app.services import document_service  # noqa: E402
@@ -82,10 +81,7 @@ async def _seed_one(
     settings,
 ) -> None:
     content = _read_dataset_file(filename)
-    mime = "application/pdf" if filename.endswith(".pdf") else "text/plain"
-    upload_file = UploadFile(
-        filename=filename, file=io.BytesIO(content), headers=Headers({"content-type": mime})
-    )
+    upload_file = UploadedFileInput(filename=filename, content=content)
 
     try:
         document = await document_service.create_document(
@@ -100,7 +96,7 @@ async def _seed_one(
             country_code=country_code,
             language=language,
         )
-    except AppError as exc:
+    except ServiceError as exc:
         if exc.code == "DUPLICATE_DOCUMENT":
             print(f"  {filename}: already seeded, skipping ({exc.details})")
             return

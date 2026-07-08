@@ -82,6 +82,7 @@ class CachedRetrievalService:
 
     async def retrieve(
         self,
+        query: str,
         query_embedding: Sequence[float],
         workspace_id: str,
         country: str | None,
@@ -109,6 +110,7 @@ class CachedRetrievalService:
                 return cached_chunks
 
         chunks = await self._retriever.retrieve(
+            query=query,
             query_embedding=query_embedding,
             workspace_id=workspace_id,
             country=country,

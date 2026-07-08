@@ -48,7 +48,10 @@ async def postgres_database_url() -> AsyncIterator[str]:
     maintenance_url = base_url.set(database=maintenance_database)
     test_url = base_url.set(database=database_name)
 
-    admin_engine = create_async_engine(str(maintenance_url), isolation_level="AUTOCOMMIT")
+    admin_engine = create_async_engine(
+        maintenance_url.render_as_string(hide_password=False),
+        isolation_level="AUTOCOMMIT",
+    )
     try:
         async with admin_engine.connect() as conn:
             await conn.execute(text(f"CREATE DATABASE {_quote_identifier(database_name)}"))
@@ -57,7 +60,7 @@ async def postgres_database_url() -> AsyncIterator[str]:
         pytest.skip(f"Postgres test database is unavailable: {exc}")
 
     try:
-        yield str(test_url)
+        yield test_url.render_as_string(hide_password=False)
     finally:
         async with admin_engine.connect() as conn:
             await conn.execute(

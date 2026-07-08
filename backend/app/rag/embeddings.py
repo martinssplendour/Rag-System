@@ -51,8 +51,8 @@ class MockEmbeddingProvider:
     Not semantically meaningful -- the vectors are a seeded hash of the
     input text, so identical text always yields identical vectors and
     retrieval ordering is reproducible, but it does not capture real
-    semantic similarity. Use ``EMBEDDING_PROVIDER=openai`` for genuine
-    (including cross-language) semantic search.
+    semantic similarity. Use ``EMBEDDING_PROVIDER=gemini`` or
+    ``EMBEDDING_PROVIDER=openai`` for genuine semantic search.
     """
 
     dimension = 64
